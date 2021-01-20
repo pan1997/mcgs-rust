@@ -28,6 +28,10 @@ pub trait Outcome<Agent> {
     fn reward_for_agent(&self, a: Agent) -> Self::RewardType;
 }
 
+pub trait Simulator<D: DecisionProcess> {
+    fn sample_outcome(&self, d: &D, state: &D::State) -> D::Outcome;
+}
+
 impl<T: Copy> Outcome<()> for T {
     type RewardType = T;
 

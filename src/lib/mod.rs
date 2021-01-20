@@ -1,6 +1,6 @@
 mod decision_process;
-mod toy_problems;
 mod mcts;
+mod toy_problems;
 
 #[cfg(test)]
 mod tests {

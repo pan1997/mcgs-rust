@@ -34,7 +34,7 @@ impl DecisionProcess for GraphDP {
             .into_iter()
     }
 
-    fn agent_to_act(&self, s: &Self::State) -> Self::Agent {
+    fn agent_to_act(&self, _: &Self::State) -> Self::Agent {
         ()
     }
 
