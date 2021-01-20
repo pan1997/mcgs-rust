@@ -9,7 +9,8 @@ type Agent = u32;
 
 struct GraphDP {
     start_state: State,
-    graph: Graph<(State, Agent), Action>,
+    // for each state, we need to store the agent to move
+    graph: Graph<Agent, Action>,
     terminal_states: BTreeMap<State, Outcome>,
 }
 
@@ -36,7 +37,7 @@ impl DecisionProcess for GraphDP {
     }
 
     fn agent_to_act(&self, s: &Self::State) -> Self::Agent {
-        self.graph.node_weight(*s).unwrap().1
+        *self.graph.node_weight(*s).unwrap()
     }
 
     fn transition(&self, s: &mut Self::State, a: &Self::Action) -> Self::UndoAction {

@@ -8,7 +8,7 @@ type Outcome = u32;
 
 struct GraphDP {
     start_state: State,
-    graph: Graph<State, Action>,
+    graph: Graph<(), Action>,
     terminal_states: BTreeMap<State, Outcome>,
 }
 
