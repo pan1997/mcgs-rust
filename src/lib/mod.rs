@@ -1,3 +1,6 @@
+mod decision_process;
+mod toy_problems;
+
 #[cfg(test)]
 mod tests {
     #[test]
