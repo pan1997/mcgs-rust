@@ -1,14 +1,13 @@
-use std::cell::Ref;
 use petgraph::visit::EdgeRef;
-use std::ops::{AddAssign, Mul};
+use std::ops::{AddAssign, Deref};
 
 trait NodeStore {
     type Node;
     type Edge;
 
     // TODO: see if we can avoid EdgeRef here
-    type EdgeRef: Clone;
-    type NodeRef: Clone;
+    type EdgeRef: Clone + Deref<Target=Self::Node>;
+    type NodeRef: Clone + Deref<Target=Self::Edge>;
 
     fn new_node(&self) -> Self::NodeRef;
 
@@ -29,4 +28,9 @@ trait Node<R: AddAssign> {
     // Once a node is marked solved, it is expected that we do not add more samples. This might
     // or might not be enforced by the node store
     fn mark_solved(&self);
+}
+
+trait Edge<A> {
+    fn selection_count(&self) -> u32;
+    fn increment_selection_count(&self);
 }
