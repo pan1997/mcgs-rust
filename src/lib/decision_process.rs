@@ -1,6 +1,3 @@
-
-
-
 pub trait DecisionProcess {
     type Agent: Copy;
     type Action;
@@ -12,7 +9,7 @@ pub trait DecisionProcess {
 
     fn start_state(&self) -> Self::State;
 
-    type Actions: Iterator<Item=Self::Action>;
+    type Actions: Iterator<Item = Self::Action>;
     fn legal_actions(&self, s: &Self::State) -> Self::Actions;
     fn agent_to_act(&self, s: &Self::State) -> Self::Agent;
 
@@ -30,7 +27,6 @@ pub trait Outcome<Agent> {
     type RewardType: Copy;
     fn reward_for_agent(&self, a: Agent) -> Self::RewardType;
 }
-
 
 impl<T: Copy> Outcome<()> for T {
     type RewardType = T;

@@ -4,16 +4,17 @@ use std::collections::BTreeMap;
 
 type State = NodeIndex;
 type Action = u32;
-type Outcome = u32;
+type Outcome = Vec<u32>;
+type Agent = u32;
 
 struct GraphDP {
     start_state: State,
-    graph: Graph<State, Action>,
+    graph: Graph<(State, Agent), Action>,
     terminal_states: BTreeMap<State, Outcome>,
 }
 
 impl DecisionProcess for GraphDP {
-    type Agent = ();
+    type Agent = Agent;
     type Action = Action;
     // We just store the state to return to as the undo_action as our state's are copy
     type UndoAction = State;
@@ -35,7 +36,7 @@ impl DecisionProcess for GraphDP {
     }
 
     fn agent_to_act(&self, s: &Self::State) -> Self::Agent {
-        ()
+        self.graph.node_weight(*s).unwrap().1
     }
 
     fn transition(&self, s: &mut Self::State, a: &Self::Action) -> Self::UndoAction {
@@ -54,6 +55,14 @@ impl DecisionProcess for GraphDP {
     }
 
     fn is_finished(&self, s: &Self::State) -> Option<Self::Outcome> {
-        self.terminal_states.get(s).map(|x| *x)
+        self.terminal_states.get(s).map(|x| x.clone())
+    }
+}
+
+impl crate::lib::decision_process::Outcome<Agent> for Vec<u32> {
+    type RewardType = u32;
+
+    fn reward_for_agent(&self, a: u32) -> Self::RewardType {
+        *self.get(a as usize).unwrap()
     }
 }
