@@ -8,7 +8,12 @@ edition = "2018"
 
 [dependencies]
 petgraph = "*"
+num = "*"
+atomic_float = "*"
 
+[dependencies.rand]
+version = "*"
+features = ["small_rng"]
 
 [[bin]]
 name = "c4"

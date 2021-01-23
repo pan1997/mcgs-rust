@@ -32,6 +32,15 @@ pub trait Simulator<D: DecisionProcess> {
     fn sample_outcome(&self, d: &D, state: &D::State) -> D::Outcome;
 }
 
+/// Defines three categories of outcomes for each agent, win, loss and draw.
+pub trait WinnableOutcome<Agent>: Outcome<Agent> {
+    fn is_winning_for(&self, a: Agent) -> bool;
+}
+
+pub trait ComparableOutcome<Agent>: Outcome<Agent> {
+    fn is_better_than(&self, other: &Self, a: Agent) -> bool;
+}
+
 impl<T: Copy> Outcome<()> for T {
     type RewardType = T;
 
@@ -40,11 +49,13 @@ impl<T: Copy> Outcome<()> for T {
     }
 }
 
-/// Defines three categories of outcomes for each agent, win, loss and draw.
-pub trait WinnableOutcome<Agent>: Outcome<Agent> {
-    fn is_winning_for(&self, a: Agent) -> bool;
-}
-
-pub trait ComparableOutcome<Agent>: Outcome<Agent> {
-    fn is_better_than(&self, other: &Self, a: Agent) -> bool;
+pub(crate) struct DefaultSimulator;
+impl<D> Simulator<D> for DefaultSimulator
+where
+    D: DecisionProcess,
+    D::Outcome: Default,
+{
+    fn sample_outcome(&self, _: &D, _: &D::State) -> D::Outcome {
+        Default::default()
+    }
 }

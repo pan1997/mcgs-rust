@@ -2,22 +2,23 @@ use crate::lib::decision_process::DecisionProcess;
 use petgraph::prelude::*;
 use std::collections::BTreeMap;
 
-type State = NodeIndex;
 type Action = u32;
-type Outcome = u32;
+type Outcome = Vec<f32>;
+type Agent = u32;
 
-struct GraphDP {
-    start_state: State,
-    graph: Graph<(), Action>,
-    terminal_states: BTreeMap<State, Outcome>,
+pub(crate) struct GraphDP {
+    start_state: NodeIndex,
+    // for each state, we need to store the agent to move
+    graph: Graph<Agent, Action>,
+    terminal_states: BTreeMap<NodeIndex, Outcome>,
 }
 
 impl DecisionProcess for GraphDP {
-    type Agent = ();
+    type Agent = Agent;
     type Action = Action;
     // We just store the state to return to as the undo_action as our state's are copy
-    type UndoAction = State;
-    type State = State;
+    type UndoAction = NodeIndex;
+    type State = NodeIndex;
     type Outcome = Outcome;
 
     fn start_state(&self) -> Self::State {
@@ -34,8 +35,8 @@ impl DecisionProcess for GraphDP {
             .into_iter()
     }
 
-    fn agent_to_act(&self, _: &Self::State) -> Self::Agent {
-        ()
+    fn agent_to_act(&self, s: &Self::State) -> Self::Agent {
+        *self.graph.node_weight(*s).unwrap()
     }
 
     fn transition(&self, s: &mut Self::State, a: &Self::Action) -> Self::UndoAction {
@@ -54,6 +55,45 @@ impl DecisionProcess for GraphDP {
     }
 
     fn is_finished(&self, s: &Self::State) -> Option<Self::Outcome> {
-        self.terminal_states.get(s).map(|x| *x)
+        self.terminal_states.get(s).map(|x| x.clone())
+    }
+}
+
+impl crate::lib::decision_process::Outcome<Agent> for Vec<f32> {
+    type RewardType = f32;
+
+    fn reward_for_agent(&self, a: u32) -> Self::RewardType {
+        *self.get(a as usize).unwrap()
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use super::*;
+
+    /// n0
+    /// +--> 1 ->> n1 (1)
+    /// +--> 2 ->> n2 (2)
+    /// +--> 3 ->> n3 (3)
+    pub(crate) fn problem1() -> GraphDP {
+        let mut result = GraphDP {
+            start_state: Default::default(),
+            graph: Graph::new(),
+            terminal_states: Default::default(),
+        };
+        let mut g = &mut result.graph;
+        // all nodes have the same agent
+        let n0 = g.add_node(0);
+        let n1 = g.add_node(0);
+        let n2 = g.add_node(0);
+        let n3 = g.add_node(0);
+
+        g.add_edge(n0, n1, 1);
+        g.add_edge(n0, n2, 2);
+        g.add_edge(n0, n3, 3);
+        result.terminal_states.insert(n1, vec![1.0]);
+        result.terminal_states.insert(n2, vec![2.0]);
+        result.terminal_states.insert(n3, vec![3.0]);
+        result
     }
 }

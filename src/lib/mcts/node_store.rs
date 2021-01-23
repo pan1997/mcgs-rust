@@ -1,3 +1,4 @@
+use rand::prelude::IteratorRandom;
 use std::ops::{AddAssign, Deref};
 
 pub trait NodeStore {
@@ -5,8 +6,8 @@ pub trait NodeStore {
     type Edge;
 
     // TODO: see if we can avoid EdgeRef here
-    type EdgeRef: Clone + Deref<Target = Self::Node>;
-    type NodeRef: Clone + Deref<Target = Self::Edge>;
+    type EdgeRef: Clone;
+    type NodeRef: Clone + Deref<Target = Self::Node>;
 
     fn new_node(&self) -> Self::NodeRef;
 
@@ -15,14 +16,19 @@ pub trait NodeStore {
     /// This is the length of the above iterator
     fn degree_outgoing(&self, n: &Self::Node) -> usize;
 
-    fn get_target_node(&self, e: Self::Edge) -> Self::NodeRef;
+    fn get_target_node(&self, e: &Self::Edge) -> Self::NodeRef;
+
+    // TODO: see if this can be avoidied by EdgeRef: Clone + Deref<Self::Edge>
+    fn get_edge(&self, n: &Self::Node, e: Self::EdgeRef) -> &Self::Edge;
 }
 
-trait Node<R: AddAssign> {
-    // This returns true if this is the first call to start expanding across all threads.
-    fn start_expanding(&self) -> bool;
+pub(crate) trait Node<R> {
+    // This returns true for all but the first call across all threads
+    fn has_started_expanding(&self) -> bool;
     // This is to be called after all outgoing edges of this node have been created
     fn finish_expanding(&self);
+
+    fn is_finished_expanding(&self) -> bool;
 
     // TODO: do we need an additional state?
     // We cannot and should not descend a child if there exists a child that does not have a
@@ -38,7 +44,7 @@ trait Node<R: AddAssign> {
     fn mark_solved(&self);
 }
 
-trait Edge<R> {
+pub(crate) trait Edge<R> {
     fn selection_count(&self) -> u32;
     fn increment_selection_count(&self);
 
@@ -49,4 +55,16 @@ trait Edge<R> {
 
 pub trait TreePolicy<NS: NodeStore> {
     fn sample_edge(&self, store: &NS, n: &NS::Node, depth: u32) -> Option<NS::EdgeRef>;
+}
+
+pub(crate) struct RandomTreePolicy;
+impl<NS: NodeStore> TreePolicy<NS> for RandomTreePolicy {
+    fn sample_edge(
+        &self,
+        store: &NS,
+        n: &<NS as NodeStore>::Node,
+        _: u32,
+    ) -> Option<<NS as NodeStore>::EdgeRef> {
+        store.edges_outgoing(n).choose(&mut rand::thread_rng())
+    }
 }
