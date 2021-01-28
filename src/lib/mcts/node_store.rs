@@ -1,5 +1,5 @@
 use rand::prelude::IteratorRandom;
-use std::ops::{AddAssign, Deref};
+use std::ops::Deref;
 
 pub trait NodeStore {
     type Node;
@@ -10,6 +10,11 @@ pub trait NodeStore {
     type NodeRef: Clone + Deref<Target = Self::Node>;
 
     fn new_node(&self) -> Self::NodeRef;
+    fn create_outgoing_edges<I: Into<Self::Edge>>(
+        &self,
+        n: &Self::Node,
+        iter: impl Iterator<Item = I>,
+    );
 
     type EdgeIter: Iterator<Item = Self::EdgeRef>;
     fn edges_outgoing(&self, n: &Self::Node) -> Self::EdgeIter;
@@ -17,14 +22,18 @@ pub trait NodeStore {
     fn degree_outgoing(&self, n: &Self::Node) -> usize;
 
     fn get_target_node(&self, e: &Self::Edge) -> Self::NodeRef;
+    // This always returns a NodeRef to a legal node, as it creates a new node if the pointer was
+    // nil before. Note that this still has a race condition in the current ThreadSafeNodeStore.
+    fn get_or_create_target_node(&self, e: &mut Self::Edge) -> Self::NodeRef;
 
     // TODO: see if this can be avoidied by EdgeRef: Clone + Deref<Self::Edge>
     fn get_edge(&self, n: &Self::Node, e: Self::EdgeRef) -> &Self::Edge;
+    fn get_edge_mut(&self, n: &Self::Node, e: Self::EdgeRef) -> &mut Self::Edge;
 }
 
 pub(crate) trait Node<R> {
     // This returns true for all but the first call across all threads
-    fn has_started_expanding(&self) -> bool;
+    //fn has_started_expanding(&self) -> bool;
     // This is to be called after all outgoing edges of this node have been created
     fn finish_expanding(&self);
 
@@ -42,6 +51,11 @@ pub(crate) trait Node<R> {
     // Once a node is marked solved, it is expected that we do not add more samples. This might
     // or might not be enforced by the node store
     fn mark_solved(&self);
+
+    // TODO: see if this can be avoided or merged with the edge's increment call.
+    fn increment_selection_count(&self);
+
+    fn total_selection_count(&self) -> u32;
 }
 
 pub(crate) trait Edge<R> {

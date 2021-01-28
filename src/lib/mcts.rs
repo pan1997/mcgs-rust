@@ -19,8 +19,8 @@ where
     NS: NodeStore,
     T: TreePolicy<NS>,
     NS::Node: Node<<D::Outcome as Outcome<D::Agent>>::RewardType>,
-    NS::Edge: Deref<Target=I> + Edge<<D::Outcome as Outcome<D::Agent>>::RewardType>,
-    I: Deref<Target=D::Action>
+    NS::Edge: Deref<Target = I> + Edge<<D::Outcome as Outcome<D::Agent>>::RewardType>,
+    I: Deref<Target = D::Action>,
 {
     pub fn new(dp: D, simulator: S, tree_policy: T, store: NS) -> Self {
         Search {
@@ -44,7 +44,7 @@ where
         n: NS::NodeRef,
         s: &mut D::State,
         stack: &mut Vec<(NS::NodeRef, D::UndoAction)>,
-    ) {
+    ) -> NS::NodeRef {
         // Using Deref coercion here
 
         let mut node = n;
@@ -53,12 +53,16 @@ where
                 .tree_policy
                 .sample_edge(&self.store, &node, stack.len() as u32)
                 .unwrap();
-            // TODO: mutate s
-            let edge = self.store.get_edge(&node, edge_ref);
-            //node.increment_selection_count();
+
+            let edge = self.store.get_edge_mut(&node, edge_ref);
+            let undo_action = self.dp.transition(s, &edge);
+
+            node.increment_selection_count();
             edge.increment_selection_count();
-            node = self.store.get_target_node(edge);
+            stack.push((node, undo_action));
+            node = self.store.get_or_create_target_node(edge);
         }
+        node
     }
 }
 
@@ -67,8 +71,9 @@ mod tests {
     use super::*;
     use crate::lib::decision_process::DefaultSimulator;
     use crate::lib::mcts::node_store::RandomTreePolicy;
-    use crate::lib::mcts::safe_tree::ThreadSafeNodeStore;
+    use crate::lib::mcts::safe_tree::tests::print_tree;
     use crate::lib::mcts::safe_tree::OnlyAction;
+    use crate::lib::mcts::safe_tree::ThreadSafeNodeStore;
     use crate::lib::toy_problems::graph_dp::tests::problem1;
 
     #[test]
@@ -79,5 +84,27 @@ mod tests {
             RandomTreePolicy,
             ThreadSafeNodeStore::<OnlyAction<_>>::new(),
         );
+
+        let node = s.store().new_node();
+        let mut state = s.dp().start_state();
+        print_tree(s.store(), &node);
+        s.store()
+            .create_outgoing_edges(&node, s.dp().legal_actions(&state));
+        print_tree(s.store(), &node);
+        assert_eq!(node.total_selection_count(), 0);
+        let mut stack = vec![];
+        let k1 = s.select(node.clone(), &mut state, &mut stack);
+        assert_eq!(node.total_selection_count(), 1);
+        print_tree(s.store(), &node);
+        let k2 = s.select(node.clone(), &mut state, &mut stack);
+        assert_eq!(node.total_selection_count(), 2);
+        print_tree(s.store(), &node);
+        let k3 = s.select(node.clone(), &mut state, &mut stack);
+        assert_eq!(node.total_selection_count(), 3);
+        print_tree(s.store(), &node);
+        let k4 = s.select(node.clone(), &mut state, &mut stack);
+        assert_eq!(node.total_selection_count(), 4);
+        print_tree(s.store(), &node);
+
     }
 }
