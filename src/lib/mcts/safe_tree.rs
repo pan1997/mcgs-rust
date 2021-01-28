@@ -1,4 +1,4 @@
-use crate::lib::mcts::node_store::NodeStore;
+use crate::lib::mcts::node_store::{NodeStore, OnlyAction};
 use atomic_float::AtomicF32;
 use num::FromPrimitive;
 use std::cell::{Cell, UnsafeCell};
@@ -100,30 +100,20 @@ impl<I> Deref for Edge<I> {
     }
 }
 
-pub(crate) struct OnlyAction<A> {
-    action: A,
-}
-
-impl<A> Display for OnlyAction<A>
-where
-    A: Display,
-{
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{{action: {}}}", self.action)
-    }
-}
-
-impl<A> Deref for OnlyAction<A> {
-    type Target = A;
-    fn deref(&self) -> &Self::Target {
-        &self.action
-    }
-}
-
 impl<A> From<A> for Edge<OnlyAction<A>> {
     fn from(action: A) -> Self {
         Edge {
             data: OnlyAction { action },
+            selection_count: AtomicU32::new(0),
+            target_node: NodeRef::new(),
+        }
+    }
+}
+
+impl<I> From<I> for Edge<I> {
+    fn from(i: I) -> Self {
+        Edge {
+            data: i,
             selection_count: AtomicU32::new(0),
             target_node: NodeRef::new(),
         }
@@ -275,21 +265,30 @@ pub(crate) mod tests {
         where
             I: Display,
         {
-            println!("node: {{count: {}}}", n.total_selection_count.load(Ordering::SeqCst));
+            println!(
+                "node: {{s_count: {}, n_count: {}, score: {:.2e}}}",
+                n.total_selection_count.load(Ordering::SeqCst),
+                n.sample_count.load(Ordering::SeqCst),
+                n.expected_score()
+            );
             for e in ns.edges_outgoing(n) {
                 for _ in 0..d {
                     print!(" ");
                 }
                 let edge = ns.get_edge(n, e);
                 print!(
-                    "+-> {{data: {}, count: {}, score: {:.2e}}} ",
+                    "+-> {{data: {}, s_count: {}, score: {:.2e}}} ",
                     edge.data,
                     edge.selection_count.load(Ordering::SeqCst),
                     edge.expected_sample()
                 );
                 // TODO: display child
-
-                println!();
+                let c = edge.target_node.clone();
+                if c.is_dangling() {
+                    println!("-> !");
+                } else {
+                    print_tree_inner(ns, &c, d + 1);
+                }
             }
         }
         print_tree_inner(ns, n, 0);

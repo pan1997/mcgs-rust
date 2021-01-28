@@ -1,4 +1,5 @@
 use rand::prelude::IteratorRandom;
+use std::fmt::{Display, Formatter};
 use std::ops::Deref;
 
 pub trait NodeStore {
@@ -80,5 +81,25 @@ impl<NS: NodeStore> TreePolicy<NS> for RandomTreePolicy {
         _: u32,
     ) -> Option<<NS as NodeStore>::EdgeRef> {
         store.edges_outgoing(n).choose(&mut rand::thread_rng())
+    }
+}
+
+pub(crate) struct OnlyAction<A> {
+    pub(crate) action: A,
+}
+
+impl<A> Display for OnlyAction<A>
+where
+    A: Display,
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{{action: {}}}", self.action)
+    }
+}
+
+impl<A> Deref for OnlyAction<A> {
+    type Target = A;
+    fn deref(&self) -> &Self::Target {
+        &self.action
     }
 }
