@@ -169,7 +169,7 @@ mod tests {
     use crate::lib::mcts::node_store::{ActionWithStaticPolicy, OnlyAction};
     use crate::lib::mcts::safe_tree::tests::print_tree;
     use crate::lib::mcts::safe_tree::ThreadSafeNodeStore;
-    use crate::lib::mcts::tree_policy::{PuctTreePolicy, RandomTreePolicy, UctTreePolicy};
+    use crate::lib::mcts::tree_policy::{PuctTreePolicy, RandomTreePolicy, UctTreePolicy, PuctWithDiricheletTreePolicy};
     use crate::lib::toy_problems::graph_dp::tests::problem1;
     use crate::lib::{NoFilteringAndUniformPolicyForPuct, NoProcessing};
 
@@ -308,6 +308,50 @@ mod tests {
             problem1(),
             DefaultSimulator,
             PuctTreePolicy::new(2.4),
+            ThreadSafeNodeStore::<ActionWithStaticPolicy<_>>::new(),
+            NoFilteringAndUniformPolicyForPuct,
+        );
+
+        let node = s.store().new_node();
+        let mut state = s.dp().start_state();
+        print_tree(s.store(), &node);
+        s.ensure_valid_starting_node(node.clone(), &mut state);
+        print_tree(s.store(), &node);
+        for _ in 0..5 {
+            s.one_block(node.clone(), &mut state, 50);
+            print_tree(s.store(), &node);
+        }
+    }
+
+
+    #[test]
+    fn test_puct_d_2() {
+        let s = Search::new(
+            problem1(),
+            DefaultSimulator,
+            PuctWithDiricheletTreePolicy::new(2.4, 1.8, 0.25),
+            ThreadSafeNodeStore::<ActionWithStaticPolicy<_>>::new(),
+            NoFilteringAndUniformPolicyForPuct,
+        );
+
+        let node = s.store().new_node();
+        let mut state = s.dp().start_state();
+        print_tree(s.store(), &node);
+        s.ensure_valid_starting_node(node.clone(), &mut state);
+        print_tree(s.store(), &node);
+        for i in 0..100 {
+            assert_eq!(node.total_selection_count(), i);
+            s.once(node.clone(), &mut state);
+            print_tree(s.store(), &node);
+        }
+    }
+
+    #[test]
+    fn test_puct_d_block() {
+        let s = Search::new(
+            problem1(),
+            DefaultSimulator,
+            PuctWithDiricheletTreePolicy::new(2.4, 1.8, 0.25),
             ThreadSafeNodeStore::<ActionWithStaticPolicy<_>>::new(),
             NoFilteringAndUniformPolicyForPuct,
         );

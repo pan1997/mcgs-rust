@@ -172,8 +172,7 @@ where
                 store,
                 n,
                 |edge_selection_count, edge| {
-                    let result =
-                    self.exploration_constant
+                    let result = self.exploration_constant
                         * (self.dirichelet_weight * noise[index]
                             + (1.0 - self.dirichelet_weight) * edge.get_static_data())
                         * factor
