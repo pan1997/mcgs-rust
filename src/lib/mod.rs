@@ -1,5 +1,5 @@
 use crate::lib::decision_process::DecisionProcess;
-use crate::lib::mcts::node_store::{OnlyAction, ActionWithStaticPolicy};
+use crate::lib::mcts::node_store::{ActionWithStaticPolicy, OnlyAction};
 
 mod decision_process;
 mod mcts;
@@ -71,8 +71,9 @@ impl<D: DecisionProcess> BlockMoveProcessor<D, OnlyAction<D::Action>> for NoProc
 }
 
 struct NoFilteringAndUniformPolicyForPuct;
-impl<D: DecisionProcess> BlockMoveProcessor<D, ActionWithStaticPolicy<D::Action>> for
-NoFilteringAndUniformPolicyForPuct {
+impl<D: DecisionProcess> BlockMoveProcessor<D, ActionWithStaticPolicy<D::Action>>
+    for NoFilteringAndUniformPolicyForPuct
+{
     type Iter = <Vec<ActionWithStaticPolicy<D::Action>> as IntoIterator>::IntoIter;
 
     fn generate_moves(
@@ -89,7 +90,10 @@ NoFilteringAndUniformPolicyForPuct {
                 (
                     outcome_opt,
                     d.legal_actions(s)
-                        .map(|a| ActionWithStaticPolicy { action: a, static_policy_score: factor })
+                        .map(|a| ActionWithStaticPolicy {
+                            action: a,
+                            static_policy_score: factor,
+                        })
                         .collect::<Vec<_>>()
                         .into_iter(),
                     terminal,
@@ -98,7 +102,9 @@ NoFilteringAndUniformPolicyForPuct {
             .collect()
     }
 }
-impl<D: DecisionProcess> MoveProcessor<D, ActionWithStaticPolicy<D::Action>> for NoFilteringAndUniformPolicyForPuct {
+impl<D: DecisionProcess> MoveProcessor<D, ActionWithStaticPolicy<D::Action>>
+    for NoFilteringAndUniformPolicyForPuct
+{
     type Iter = <Vec<ActionWithStaticPolicy<D::Action>> as IntoIterator>::IntoIter;
 
     fn generate_moves(
@@ -112,11 +118,13 @@ impl<D: DecisionProcess> MoveProcessor<D, ActionWithStaticPolicy<D::Action>> for
         (
             outcome_opt,
             d.legal_actions(s)
-                .map(|a| ActionWithStaticPolicy { action: a, static_policy_score: factor })
+                .map(|a| ActionWithStaticPolicy {
+                    action: a,
+                    static_policy_score: factor,
+                })
                 .collect::<Vec<_>>()
                 .into_iter(),
             terminal,
         )
     }
 }
-

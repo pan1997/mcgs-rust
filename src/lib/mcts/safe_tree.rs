@@ -1,4 +1,6 @@
-use crate::lib::mcts::node_store::{NodeStore, OnlyAction};
+use crate::lib::mcts::node_store::{
+    ActionWithStaticPolicy, EdgeWithStaticData, NodeStore, OnlyAction,
+};
 use atomic_float::AtomicF32;
 use num::FromPrimitive;
 use std::cell::{Cell, UnsafeCell};
@@ -207,6 +209,12 @@ impl<A> crate::lib::mcts::node_store::Edge<f32> for Edge<A> {
         } else {
             self.target_node.expected_score()
         }
+    }
+}
+
+impl<A> EdgeWithStaticData<f32> for Edge<ActionWithStaticPolicy<A>> {
+    fn get_static_data(&self) -> f32 {
+        self.data.static_policy_score
     }
 }
 

@@ -166,12 +166,12 @@ where
 mod tests {
     use super::*;
     use crate::lib::decision_process::DefaultSimulator;
-    use crate::lib::mcts::node_store::{OnlyAction, ActionWithStaticPolicy};
+    use crate::lib::mcts::node_store::{ActionWithStaticPolicy, OnlyAction};
     use crate::lib::mcts::safe_tree::tests::print_tree;
     use crate::lib::mcts::safe_tree::ThreadSafeNodeStore;
-    use crate::lib::mcts::tree_policy::{RandomTreePolicy, UctTreePolicy, PuctTreePolicy};
+    use crate::lib::mcts::tree_policy::{PuctTreePolicy, RandomTreePolicy, UctTreePolicy};
     use crate::lib::toy_problems::graph_dp::tests::problem1;
-    use crate::lib::{NoProcessing, NoFilteringAndUniformPolicyForPuct};
+    use crate::lib::{NoFilteringAndUniformPolicyForPuct, NoProcessing};
 
     #[test]
     fn test_basic() {
@@ -279,7 +279,6 @@ mod tests {
             print_tree(s.store(), &node);
         }
     }
-
 
     #[test]
     fn test_puct_2() {

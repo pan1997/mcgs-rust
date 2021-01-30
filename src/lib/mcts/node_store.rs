@@ -68,6 +68,10 @@ pub(crate) trait Edge<R> {
     fn expected_sample(&self) -> R;
 }
 
+pub(crate) trait EdgeWithStaticData<I> {
+    fn get_static_data(&self) -> I;
+}
+
 pub trait TreePolicy<NS: NodeStore> {
     fn sample_edge(&self, store: &NS, n: &NS::Node, depth: u32) -> Option<NS::EdgeRef>;
 }
@@ -102,7 +106,11 @@ where
     A: Display,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{{action: {}, static_score: {}}}", self.action, self.static_policy_score)
+        write!(
+            f,
+            "{{action: {}, static_score: {}}}",
+            self.action, self.static_policy_score
+        )
     }
 }
 

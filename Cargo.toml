@@ -10,6 +10,7 @@ edition = "2018"
 petgraph = "*"
 num = "*"
 atomic_float = "*"
+rand_distr = "*"
 
 [dependencies.rand]
 version = "*"
