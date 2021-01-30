@@ -63,6 +63,7 @@ impl crate::lib::decision_process::Outcome<Agent> for Vec<f32> {
     type RewardType = f32;
 
     fn reward_for_agent(&self, a: u32) -> Self::RewardType {
+        println!("lenght of self {}, agent: {}", self.len(), a);
         *self.get(a as usize).unwrap()
     }
 }
@@ -70,6 +71,7 @@ impl crate::lib::decision_process::Outcome<Agent> for Vec<f32> {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use crate::lib::decision_process::Simulator;
 
     /// n0
     /// +--> 1 ->> n1 (1)
@@ -94,6 +96,36 @@ pub(crate) mod tests {
         result.terminal_states.insert(n1, vec![1.0]);
         result.terminal_states.insert(n2, vec![2.0]);
         result.terminal_states.insert(n3, vec![3.0]);
+        result
+    }
+
+    pub(crate) struct DSim;
+    impl Simulator<GraphDP> for DSim  {
+        fn sample_outcome(&self, d: &GraphDP, state: &<GraphDP as DecisionProcess>::State) -> <GraphDP as DecisionProcess>::Outcome {
+            vec![0.0, 0.0]
+        }
+    }
+
+    pub(crate) fn problem2() -> GraphDP {
+        let mut result = GraphDP {
+            start_state: Default::default(),
+            graph: Graph::new(),
+            terminal_states: Default::default(),
+        };
+        let mut g = &mut result.graph;
+        let n0 = g.add_node(0);
+        let n1 = g.add_node(1);
+        let n2 = g.add_node(1);
+        let n3 = g.add_node(0);
+        let n4 = g.add_node(0);
+
+        g.add_edge(n0, n1, 8);
+        g.add_edge(n0, n2, 16);
+        g.add_edge(n1, n3, 8);
+        g.add_edge(n1, n4, 16);
+        result.terminal_states.insert(n2, vec![1.0, -1.0]);
+        result.terminal_states.insert(n3, vec![0.0, 0.0]);
+        result.terminal_states.insert(n4, vec![-1.0, 1.0]);
         result
     }
 }

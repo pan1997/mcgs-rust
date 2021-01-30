@@ -259,11 +259,11 @@ pub(crate) mod tests {
             );
             for e in ns.edges_outgoing(n) {
                 for _ in 0..d {
-                    print!(" ");
+                    print!("|-");
                 }
                 let edge = ns.get_edge(n, e);
                 print!(
-                    "+-> {{data: {}, s_count: {}, score: {:.2e}}} ",
+                    "-> {{data: {}, s_count: {}, score: {:.2e}}} ",
                     edge.data,
                     edge.selection_count.load(Ordering::SeqCst),
                     edge.expected_sample()

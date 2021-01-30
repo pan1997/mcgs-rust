@@ -147,6 +147,9 @@ where
         P: MoveProcessor<D, I>,
     {
         if !n.is_finished_expanding() && !n.is_solved() {
+            // This is to ensure that the invariant is maintained at all nodes (sum of selection
+            // count of children + 1 = selection count of node (because of expansion))
+            n.increment_selection_count();
             let (outcome_opt, generated_moves, terminal) =
                 self.preprocessor.generate_moves(&self.dp, s);
             if terminal {
@@ -170,7 +173,7 @@ mod tests {
     use crate::lib::mcts::safe_tree::tests::print_tree;
     use crate::lib::mcts::safe_tree::ThreadSafeNodeStore;
     use crate::lib::mcts::tree_policy::{PuctTreePolicy, RandomTreePolicy, UctTreePolicy, PuctWithDiricheletTreePolicy};
-    use crate::lib::toy_problems::graph_dp::tests::problem1;
+    use crate::lib::toy_problems::graph_dp::tests::{problem1, problem2, DSim};
     use crate::lib::{NoFilteringAndUniformPolicyForPuct, NoProcessing};
 
     #[test]
@@ -190,7 +193,7 @@ mod tests {
         print_tree(s.store(), &node);
         let mut stack = vec![];
         for i in 0..10 {
-            assert_eq!(node.total_selection_count(), i);
+            assert_eq!(node.total_selection_count(), i + 1);
             let k4 = s.select(node.clone(), &mut state, &mut stack);
             print_tree(s.store(), &node);
         }
@@ -212,7 +215,7 @@ mod tests {
         s.ensure_valid_starting_node(node.clone(), &mut state);
         print_tree(s.store(), &node);
         for i in 0..10 {
-            assert_eq!(node.total_selection_count(), i);
+            assert_eq!(node.total_selection_count(), i + 1);
             s.once(node.clone(), &mut state);
             print_tree(s.store(), &node);
         }
@@ -253,7 +256,7 @@ mod tests {
         s.ensure_valid_starting_node(node.clone(), &mut state);
         print_tree(s.store(), &node);
         for i in 0..100 {
-            assert_eq!(node.total_selection_count(), i);
+            assert_eq!(node.total_selection_count(), i + 1);
             s.once(node.clone(), &mut state);
             print_tree(s.store(), &node);
         }
@@ -296,7 +299,7 @@ mod tests {
         s.ensure_valid_starting_node(node.clone(), &mut state);
         print_tree(s.store(), &node);
         for i in 0..100 {
-            assert_eq!(node.total_selection_count(), i);
+            assert_eq!(node.total_selection_count(), i + 1);
             s.once(node.clone(), &mut state);
             print_tree(s.store(), &node);
         }
@@ -323,7 +326,6 @@ mod tests {
         }
     }
 
-
     #[test]
     fn test_puct_d_2() {
         let s = Search::new(
@@ -340,7 +342,7 @@ mod tests {
         s.ensure_valid_starting_node(node.clone(), &mut state);
         print_tree(s.store(), &node);
         for i in 0..100 {
-            assert_eq!(node.total_selection_count(), i);
+            assert_eq!(node.total_selection_count(), i + 1);
             s.once(node.clone(), &mut state);
             print_tree(s.store(), &node);
         }
@@ -363,6 +365,28 @@ mod tests {
         print_tree(s.store(), &node);
         for _ in 0..5 {
             s.one_block(node.clone(), &mut state, 50);
+            print_tree(s.store(), &node);
+        }
+    }
+
+    #[test]
+    fn test_puct_2_multi_agent() {
+        let s = Search::new(
+            problem2(),
+            DSim,
+            PuctTreePolicy::new(2.4),
+            ThreadSafeNodeStore::<ActionWithStaticPolicy<_>>::new(),
+            NoFilteringAndUniformPolicyForPuct,
+        );
+
+        let node = s.store().new_node();
+        let mut state = s.dp().start_state();
+        print_tree(s.store(), &node);
+        s.ensure_valid_starting_node(node.clone(), &mut state);
+        print_tree(s.store(), &node);
+        for i in 0..100 {
+            assert_eq!(node.total_selection_count(), i + 1);
+            s.once(node.clone(), &mut state);
             print_tree(s.store(), &node);
         }
     }
