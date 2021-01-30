@@ -72,18 +72,6 @@ pub trait TreePolicy<NS: NodeStore> {
     fn sample_edge(&self, store: &NS, n: &NS::Node, depth: u32) -> Option<NS::EdgeRef>;
 }
 
-pub(crate) struct RandomTreePolicy;
-impl<NS: NodeStore> TreePolicy<NS> for RandomTreePolicy {
-    fn sample_edge(
-        &self,
-        store: &NS,
-        n: &<NS as NodeStore>::Node,
-        _: u32,
-    ) -> Option<<NS as NodeStore>::EdgeRef> {
-        store.edges_outgoing(n).choose(&mut rand::thread_rng())
-    }
-}
-
 pub(crate) struct OnlyAction<A> {
     pub(crate) action: A,
 }
@@ -98,6 +86,27 @@ where
 }
 
 impl<A> Deref for OnlyAction<A> {
+    type Target = A;
+    fn deref(&self) -> &Self::Target {
+        &self.action
+    }
+}
+
+pub(crate) struct ActionWithStaticPolicy<A> {
+    pub(crate) action: A,
+    pub(crate) static_policy_score: f32,
+}
+
+impl<A> Display for ActionWithStaticPolicy<A>
+where
+    A: Display,
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{{action: {}, static_score: {}}}", self.action, self.static_policy_score)
+    }
+}
+
+impl<A> Deref for ActionWithStaticPolicy<A> {
     type Target = A;
     fn deref(&self) -> &Self::Target {
         &self.action

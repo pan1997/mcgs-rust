@@ -1,5 +1,5 @@
 use crate::lib::decision_process::DecisionProcess;
-use crate::lib::mcts::node_store::OnlyAction;
+use crate::lib::mcts::node_store::{OnlyAction, ActionWithStaticPolicy};
 
 mod decision_process;
 mod mcts;
@@ -44,24 +44,79 @@ impl<D: DecisionProcess> MoveProcessor<D, OnlyAction<D::Action>> for NoProcessin
     }
 }
 
-trait Rollout<D: DecisionProcess> {
-    fn sample_outcome(&self, d: &D, s: &mut D::State) -> D::Outcome;
-}
+impl<D: DecisionProcess> BlockMoveProcessor<D, OnlyAction<D::Action>> for NoProcessing {
+    type Iter = <Vec<OnlyAction<D::Action>> as IntoIterator>::IntoIter;
 
-struct DefaultRollout;
-impl<D: DecisionProcess> Rollout<D> for DefaultRollout
-where
-    D::Outcome: Default,
-{
-    fn sample_outcome(&self, _: &D, _: &mut <D as DecisionProcess>::State) -> D::Outcome {
-        Default::default()
+    fn generate_moves(
+        &self,
+        d: &D,
+        states: &mut Vec<<D as DecisionProcess>::State>,
+    ) -> Vec<(Option<<D as DecisionProcess>::Outcome>, Self::Iter, bool)> {
+        states
+            .iter()
+            .map(|s| {
+                let outcome_opt = d.is_finished(s);
+                let terminal = outcome_opt.is_some();
+                (
+                    outcome_opt,
+                    d.legal_actions(s)
+                        .map(|a| OnlyAction { action: a })
+                        .collect::<Vec<_>>()
+                        .into_iter(),
+                    terminal,
+                )
+            })
+            .collect()
     }
 }
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
+struct NoFilteringAndUniformPolicyForPuct;
+impl<D: DecisionProcess> BlockMoveProcessor<D, ActionWithStaticPolicy<D::Action>> for
+NoFilteringAndUniformPolicyForPuct {
+    type Iter = <Vec<ActionWithStaticPolicy<D::Action>> as IntoIterator>::IntoIter;
+
+    fn generate_moves(
+        &self,
+        d: &D,
+        states: &mut Vec<<D as DecisionProcess>::State>,
+    ) -> Vec<(Option<<D as DecisionProcess>::Outcome>, Self::Iter, bool)> {
+        states
+            .iter()
+            .map(|s| {
+                let outcome_opt = d.is_finished(s);
+                let terminal = outcome_opt.is_some();
+                let factor = 1.0 / d.legal_actions(s).count() as f32;
+                (
+                    outcome_opt,
+                    d.legal_actions(s)
+                        .map(|a| ActionWithStaticPolicy { action: a, static_policy_score: factor })
+                        .collect::<Vec<_>>()
+                        .into_iter(),
+                    terminal,
+                )
+            })
+            .collect()
     }
 }
+impl<D: DecisionProcess> MoveProcessor<D, ActionWithStaticPolicy<D::Action>> for NoFilteringAndUniformPolicyForPuct {
+    type Iter = <Vec<ActionWithStaticPolicy<D::Action>> as IntoIterator>::IntoIter;
+
+    fn generate_moves(
+        &self,
+        d: &D,
+        s: &mut D::State,
+    ) -> (Option<<D as DecisionProcess>::Outcome>, Self::Iter, bool) {
+        let outcome_opt = d.is_finished(s);
+        let terminal = outcome_opt.is_some();
+        let factor = 1.0 / d.legal_actions(s).count() as f32;
+        (
+            outcome_opt,
+            d.legal_actions(s)
+                .map(|a| ActionWithStaticPolicy { action: a, static_policy_score: factor })
+                .collect::<Vec<_>>()
+                .into_iter(),
+            terminal,
+        )
+    }
+}
+

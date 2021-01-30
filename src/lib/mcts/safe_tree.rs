@@ -100,16 +100,6 @@ impl<I> Deref for Edge<I> {
     }
 }
 
-impl<A> From<A> for Edge<OnlyAction<A>> {
-    fn from(action: A) -> Self {
-        Edge {
-            data: OnlyAction { action },
-            selection_count: AtomicU32::new(0),
-            target_node: NodeRef::new(),
-        }
-    }
-}
-
 impl<I> From<I> for Edge<I> {
     fn from(i: I) -> Self {
         Edge {
@@ -117,18 +107,6 @@ impl<I> From<I> for Edge<I> {
             selection_count: AtomicU32::new(0),
             target_node: NodeRef::new(),
         }
-    }
-}
-
-struct ActionWithStaticPolicy<A> {
-    action: A,
-    static_policy_score: f32,
-}
-
-impl<A> Deref for ActionWithStaticPolicy<A> {
-    type Target = A;
-    fn deref(&self) -> &Self::Target {
-        &self.action
     }
 }
 
