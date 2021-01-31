@@ -61,7 +61,7 @@ where
 }
 
 use rand::prelude::IteratorRandom;
-struct RandomSimulator;
+pub(crate) struct RandomSimulator;
 impl<D> Simulator<D> for RandomSimulator
 where
     D: DecisionProcess,
@@ -88,5 +88,5 @@ where
     }
 }
 
-mod c4;
+pub(crate) mod c4;
 pub(crate) mod graph_dp;

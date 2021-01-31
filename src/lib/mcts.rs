@@ -1,8 +1,10 @@
 use crate::lib::decision_process::{DecisionProcess, Outcome, Simulator};
-use crate::lib::mcts::node_store::{Edge, Node, NodeStore, TreePolicy};
+use crate::lib::mcts::node_store::{Edge, Node, NodeStore, Nullable, TreePolicy};
+use crate::lib::mcts::tree_policy::MostVisitedTreePolicy;
 use crate::lib::{BlockMoveProcessor, MoveProcessor};
 use std::fmt::Display;
 use std::ops::Deref;
+use std::time::Instant;
 
 pub(crate) mod node_store;
 pub(crate) mod safe_tree;
@@ -86,7 +88,7 @@ where
             prev.add_sample(o.reward_for_agent(self.dp.agent_to_act(s)), w);
             prev = n;
         }
-        // TODO: see a way to update root node info, as it is not propogated. Also, do we need that?
+        // TODO: see a way to update root node info, as it is not propagated. Also, do we need that?
     }
 
     pub(crate) fn once(&self, n: NS::NodeRef, s: &mut D::State)
@@ -164,6 +166,57 @@ where
                 .unwrap();
             self.backtrack(n, s, &mut vec![], outcome, 1);
         }
+    }
+
+    pub(crate) fn print_pv(
+        &self,
+        mut n: NS::NodeRef,
+        start_time: Option<Instant>,
+        start_count: Option<u32>,
+        filter: u32,
+    ) where
+        D::Action: Display,
+        NS::Edge: Edge<f32>,
+    {
+        let simulation_count = n.total_selection_count() - start_count.or(Some(0)).unwrap();
+        print!("{}kN ", simulation_count);
+        if start_time.is_some() {
+            let elapsed = start_time.unwrap().elapsed().as_millis();
+            print!(
+                "in {}ms @{}kNps ",
+                elapsed,
+                simulation_count as u128 / elapsed
+            );
+        }
+        print!("|-");
+        let mut len = 0;
+        let mut filtered_len = 0;
+        let mut flag = true;
+        while n.is_some() && n.is_finished_expanding() && !n.is_solved() {
+            let edge_ref_opt = MostVisitedTreePolicy.sample_edge(&self.store, &n, 0);
+            if edge_ref_opt.is_none() {
+                break;
+            } else {
+                let edge = self.store.get_edge(&n, edge_ref_opt.unwrap());
+                let action: &D::Action = &edge;
+                let selection_count = Edge::<f32>::selection_count(edge);
+                if selection_count < filter {
+                    flag = false;
+                }
+                if flag {
+                    print!(
+                        ">{{{}, {}kN={:.0}%}}-",
+                        action,
+                        selection_count / 1000,
+                        (selection_count as f32 / n.total_selection_count() as f32) * 100.0
+                    );
+                    filtered_len += 1;
+                }
+                n = self.store.get_target_node(edge);
+                len += 1;
+            }
+        }
+        println!(" | depth {}/{}", filtered_len, len);
     }
 }
 

@@ -8,7 +8,7 @@ pub trait NodeStore {
 
     // TODO: see if we can avoid EdgeRef here
     type EdgeRef: Clone;
-    type NodeRef: Clone + Deref<Target = Self::Node>;
+    type NodeRef: Clone + Deref<Target = Self::Node> + Nullable;
 
     fn new_node(&self) -> Self::NodeRef;
     fn create_outgoing_edges<I: Into<Self::Edge>>(
@@ -30,6 +30,10 @@ pub trait NodeStore {
     // TODO: see if this can be avoidied by EdgeRef: Clone + Deref<Self::Edge>
     fn get_edge(&self, n: &Self::Node, e: Self::EdgeRef) -> &Self::Edge;
     fn get_edge_mut(&self, n: &Self::Node, e: Self::EdgeRef) -> &mut Self::Edge;
+}
+
+pub trait Nullable {
+    fn is_some(&self) -> bool;
 }
 
 pub(crate) trait Node<R> {

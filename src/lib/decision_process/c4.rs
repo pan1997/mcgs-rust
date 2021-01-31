@@ -7,7 +7,7 @@ type Player = i8;
 const B: Player = i8::MIN;
 const W: Player = i8::MAX;
 
-struct Board {
+pub struct Board {
     white_pieces: Vec<bool>,
     black_pieces: Vec<bool>,
     height: Vec<u8>,
@@ -19,15 +19,15 @@ struct Board {
 
 // The enclosed value is the square column
 #[derive(Clone, Copy)]
-struct Move(u8);
+pub struct Move(u8);
 
-struct C4 {
+pub(crate) struct C4 {
     width: usize,
     height: usize,
     size: usize, // = width * height
 }
 // 0 is draw, otherwise it stores the winner
-struct C4Outcome(Player);
+pub struct C4Outcome(Player);
 
 impl DecisionProcess for C4 {
     type Agent = Player;
@@ -150,7 +150,7 @@ impl C4 {
         3
     }
 
-    fn new(width: usize, height: usize) -> C4 {
+    pub(crate) fn new(width: usize, height: usize) -> C4 {
         C4 {
             width,
             height,
@@ -217,13 +217,15 @@ impl Default for C4Outcome {
 mod tests {
     use super::*;
     use crate::lib::decision_process::{DefaultSimulator, RandomSimulator};
-    use crate::lib::mcts::node_store::{Node, NodeStore, OnlyAction, ActionWithStaticPolicy};
+    use crate::lib::mcts::node_store::{ActionWithStaticPolicy, Node, NodeStore, OnlyAction};
     use crate::lib::mcts::safe_tree::tests::node_distribution;
     use crate::lib::mcts::safe_tree::tests::print_tree;
     use crate::lib::mcts::safe_tree::ThreadSafeNodeStore;
-    use crate::lib::mcts::tree_policy::{UctTreePolicy, PuctTreePolicy, PuctWithDiricheletTreePolicy};
+    use crate::lib::mcts::tree_policy::{
+        PuctTreePolicy, PuctWithDiricheletTreePolicy, UctTreePolicy,
+    };
     use crate::lib::mcts::Search;
-    use crate::lib::{NoProcessing, NoFilteringAndUniformPolicyForPuct};
+    use crate::lib::{NoFilteringAndUniformPolicyForPuct, NoProcessing};
 
     #[test]
     fn basic() {
@@ -272,6 +274,7 @@ mod tests {
             s.once(node.clone(), &mut state);
         }
         node_distribution(s.store(), &node);
+        s.print_pv(node, None, None, 20);
     }
 
     #[test]
@@ -317,5 +320,4 @@ mod tests {
         }
         node_distribution(s.store(), &node);
     }
-
 }

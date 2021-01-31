@@ -1,8 +1,8 @@
 use crate::lib::decision_process::DecisionProcess;
 use crate::lib::mcts::node_store::{ActionWithStaticPolicy, OnlyAction};
 
-mod decision_process;
-mod mcts;
+pub(crate) mod decision_process;
+pub(crate) mod mcts;
 
 pub trait MoveProcessor<D: DecisionProcess, E> {
     type Iter: Iterator<Item = E>;
@@ -21,7 +21,7 @@ pub trait BlockMoveProcessor<D: DecisionProcess, E> {
     ) -> Vec<(Option<D::Outcome>, Self::Iter, bool)>;
 }
 
-struct NoProcessing;
+pub(crate) struct NoProcessing;
 impl<D: DecisionProcess> MoveProcessor<D, OnlyAction<D::Action>> for NoProcessing {
     type Iter = <Vec<OnlyAction<D::Action>> as IntoIterator>::IntoIter;
 
@@ -69,7 +69,7 @@ impl<D: DecisionProcess> BlockMoveProcessor<D, OnlyAction<D::Action>> for NoProc
     }
 }
 
-struct NoFilteringAndUniformPolicyForPuct;
+pub(crate) struct NoFilteringAndUniformPolicyForPuct;
 impl<D: DecisionProcess> BlockMoveProcessor<D, ActionWithStaticPolicy<D::Action>>
     for NoFilteringAndUniformPolicyForPuct
 {

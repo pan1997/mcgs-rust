@@ -39,6 +39,33 @@ where
     }
 }
 
+// TODO: find a way to define this for all I
+pub(crate) struct MostVisitedTreePolicy;
+impl<NS: NodeStore> TreePolicy<NS> for MostVisitedTreePolicy
+where
+    NS::Edge: Edge<f32>,
+{
+    fn sample_edge(
+        &self,
+        store: &NS,
+        n: &<NS as NodeStore>::Node,
+        depth: u32,
+    ) -> Option<<NS as NodeStore>::EdgeRef> {
+        debug_assert!(store.degree_outgoing(n) > 0);
+        let mut best_edge = None;
+        let mut best_edge_count = 0;
+        for edge_ref in store.edges_outgoing(n) {
+            let edge = store.get_edge(n, edge_ref.clone());
+            let count = edge.selection_count();
+            if count > best_edge_count {
+                best_edge = Some(edge_ref);
+                best_edge_count = count;
+            }
+        }
+        best_edge
+    }
+}
+
 pub(crate) struct UctTreePolicy {
     exploration_constant: f32,
 }
@@ -200,6 +227,7 @@ where
 {
     let mut best_edge = None;
     let mut best_edge_total_score = f32::MIN;
+    let mut best_edge_exploration_score = f32::MIN;
     // This is used to denote the number of edges that have the same score as the best edge
     let mut best_edge_equivalence_count = 0;
     let factor = (selection_count as f32).ln();
@@ -223,12 +251,20 @@ where
 
         if total_score > best_edge_total_score {
             best_edge_total_score = total_score;
+            best_edge_exploration_score = edge_exploration_score;
             best_edge = Some(edge_ref);
             best_edge_equivalence_count = 1;
         } else if total_score == best_edge_total_score {
-            best_edge_equivalence_count += 1;
-            if rand::thread_rng().gen_range(0..best_edge_equivalence_count) == 0 {
+            if edge_exploration_score > best_edge_exploration_score {
+                best_edge_total_score = total_score;
+                best_edge_exploration_score = edge_exploration_score;
                 best_edge = Some(edge_ref);
+                best_edge_equivalence_count = 1;
+            } else if edge_exploration_score == best_edge_exploration_score {
+                best_edge_equivalence_count += 1;
+                if rand::thread_rng().gen_range(0..best_edge_equivalence_count) == 0 {
+                    best_edge = Some(edge_ref);
+                }
             }
         }
     }

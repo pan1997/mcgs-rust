@@ -237,6 +237,12 @@ impl<A> Clone for NodeRef<A> {
     }
 }
 
+impl<A> crate::lib::mcts::node_store::Nullable for NodeRef<A> {
+    fn is_some(&self) -> bool {
+        !self.is_dangling()
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
