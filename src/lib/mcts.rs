@@ -108,6 +108,8 @@ where
         self.backtrack(node, s, &mut stack, outcome, 1);
     }
 
+    // Ensure that there is a certian number of visitations on the node n before attempting to
+    // run a block, as otherwise, it could cause many collisions, which are not handled as of now.
     fn one_block(&self, n: NS::NodeRef, s: &mut D::State, block: usize)
     where
         P: BlockMoveProcessor<D, I>,
@@ -173,7 +175,7 @@ mod tests {
     use crate::lib::mcts::safe_tree::tests::print_tree;
     use crate::lib::mcts::safe_tree::ThreadSafeNodeStore;
     use crate::lib::mcts::tree_policy::{PuctTreePolicy, RandomTreePolicy, UctTreePolicy, PuctWithDiricheletTreePolicy};
-    use crate::lib::toy_problems::graph_dp::tests::{problem1, problem2, DSim};
+    use crate::lib::decision_process::graph_dp::tests::{problem1, problem2, DSim};
     use crate::lib::{NoFilteringAndUniformPolicyForPuct, NoProcessing};
 
     #[test]
@@ -384,9 +386,30 @@ mod tests {
         print_tree(s.store(), &node);
         s.ensure_valid_starting_node(node.clone(), &mut state);
         print_tree(s.store(), &node);
-        for i in 0..100 {
+        for i in 0..250 {
             assert_eq!(node.total_selection_count(), i + 1);
             s.once(node.clone(), &mut state);
+            print_tree(s.store(), &node);
+        }
+    }
+
+    #[test]
+    fn test_puct_2_multi_agent_block() {
+        let s = Search::new(
+            problem2(),
+            DSim,
+            PuctTreePolicy::new(2.4),
+            ThreadSafeNodeStore::<ActionWithStaticPolicy<_>>::new(),
+            NoFilteringAndUniformPolicyForPuct,
+        );
+
+        let node = s.store().new_node();
+        let mut state = s.dp().start_state();
+        print_tree(s.store(), &node);
+        s.ensure_valid_starting_node(node.clone(), &mut state);
+        print_tree(s.store(), &node);
+        for _ in 0..5 {
+            s.one_block(node.clone(), &mut state, 50);
             print_tree(s.store(), &node);
         }
     }

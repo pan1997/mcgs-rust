@@ -63,7 +63,6 @@ impl crate::lib::decision_process::Outcome<Agent> for Vec<f32> {
     type RewardType = f32;
 
     fn reward_for_agent(&self, a: u32) -> Self::RewardType {
-        println!("lenght of self {}, agent: {}", self.len(), a);
         *self.get(a as usize).unwrap()
     }
 }
@@ -119,10 +118,10 @@ pub(crate) mod tests {
         let n3 = g.add_node(0);
         let n4 = g.add_node(0);
 
-        g.add_edge(n0, n1, 8);
-        g.add_edge(n0, n2, 16);
-        g.add_edge(n1, n3, 8);
-        g.add_edge(n1, n4, 16);
+        g.add_edge(n0, n1, 0);
+        g.add_edge(n0, n2, 1);
+        g.add_edge(n1, n3, 2);
+        g.add_edge(n1, n4, 3);
         result.terminal_states.insert(n2, vec![1.0, -1.0]);
         result.terminal_states.insert(n3, vec![0.0, 0.0]);
         result.terminal_states.insert(n4, vec![-1.0, 1.0]);

@@ -3,7 +3,6 @@ use crate::lib::mcts::node_store::{ActionWithStaticPolicy, OnlyAction};
 
 mod decision_process;
 mod mcts;
-mod toy_problems;
 
 trait MoveProcessor<D: DecisionProcess, E> {
     type Iter: Iterator<Item = E>;
