@@ -259,8 +259,9 @@ pub(crate) mod tests {
             );
             for e in ns.edges_outgoing(n) {
                 for _ in 0..d {
-                    print!("|-");
+                    print!("  ");
                 }
+                print!("|-");
                 let edge = ns.get_edge(n, e);
                 print!(
                     "-> {{data: {}, s_count: {}, score: {:.2e}}} ",
@@ -278,5 +279,21 @@ pub(crate) mod tests {
             }
         }
         print_tree_inner(ns, n, 0);
+    }
+
+    pub(crate) fn node_distribution<I>(ns: &ThreadSafeNodeStore<I>, n: &Node<I>)
+    where
+        I: Display,
+    {
+        let total = n.total_selection_count.load(Ordering::SeqCst) as f32;
+        ns.edges_outgoing(n).for_each(|e| {
+            let edge = ns.get_edge(n, e);
+            println!(
+                "data: {}, s_count:{:.3}%, score: {:.3}",
+                edge.data,
+                edge.selection_count() as f32 / total,
+                edge.expected_sample()
+            )
+        })
     }
 }

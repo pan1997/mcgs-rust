@@ -29,7 +29,7 @@ pub trait Outcome<Agent> {
 }
 
 pub trait Simulator<D: DecisionProcess> {
-    fn sample_outcome(&self, d: &D, state: &D::State) -> D::Outcome;
+    fn sample_outcome(&self, d: &D, state: &mut D::State) -> D::Outcome;
 }
 
 /// Defines three categories of outcomes for each agent, win, loss and draw.
@@ -55,9 +55,38 @@ where
     D: DecisionProcess,
     D::Outcome: Default,
 {
-    fn sample_outcome(&self, _: &D, _: &D::State) -> D::Outcome {
+    fn sample_outcome(&self, _: &D, _: &mut D::State) -> D::Outcome {
         Default::default()
     }
 }
 
+use rand::prelude::IteratorRandom;
+struct RandomSimulator;
+impl<D> Simulator<D> for RandomSimulator
+where
+    D: DecisionProcess,
+{
+    fn sample_outcome(&self, d: &D, s: &mut D::State) -> D::Outcome {
+        let check = d.is_finished(s);
+        if check.is_some() {
+            check.unwrap()
+        } else {
+            let mut stack = vec![];
+            loop {
+                let action = d.legal_actions(s).choose(&mut rand::thread_rng()).unwrap();
+                let u = d.transition(s, &action);
+                stack.push(u);
+                let check = d.is_finished(s);
+                if check.is_some() {
+                    while let Some(u) = stack.pop() {
+                        d.undo_transition(s, u);
+                    }
+                    return check.unwrap();
+                }
+            }
+        }
+    }
+}
+
+mod c4;
 pub(crate) mod graph_dp;

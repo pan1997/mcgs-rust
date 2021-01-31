@@ -4,7 +4,7 @@ use crate::lib::mcts::node_store::{ActionWithStaticPolicy, OnlyAction};
 mod decision_process;
 mod mcts;
 
-trait MoveProcessor<D: DecisionProcess, E> {
+pub trait MoveProcessor<D: DecisionProcess, E> {
     type Iter: Iterator<Item = E>;
     // This returns an optional outcome (if sampling is merged in the move processor itself, the
     // iterator of generated moves, and the bool representing if the returned outcome is solid
@@ -12,7 +12,7 @@ trait MoveProcessor<D: DecisionProcess, E> {
     fn generate_moves(&self, d: &D, s: &mut D::State) -> (Option<D::Outcome>, Self::Iter, bool);
 }
 
-trait BlockMoveProcessor<D: DecisionProcess, E> {
+pub trait BlockMoveProcessor<D: DecisionProcess, E> {
     type Iter: Iterator<Item = E>;
     fn generate_moves(
         &self,

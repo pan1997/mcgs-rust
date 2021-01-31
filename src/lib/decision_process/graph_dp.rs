@@ -99,8 +99,12 @@ pub(crate) mod tests {
     }
 
     pub(crate) struct DSim;
-    impl Simulator<GraphDP> for DSim  {
-        fn sample_outcome(&self, d: &GraphDP, state: &<GraphDP as DecisionProcess>::State) -> <GraphDP as DecisionProcess>::Outcome {
+    impl Simulator<GraphDP> for DSim {
+        fn sample_outcome(
+            &self,
+            d: &GraphDP,
+            state: &mut <GraphDP as DecisionProcess>::State,
+        ) -> <GraphDP as DecisionProcess>::Outcome {
             vec![0.0, 0.0]
         }
     }

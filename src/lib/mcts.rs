@@ -5,10 +5,10 @@ use std::fmt::Display;
 use std::ops::Deref;
 
 pub(crate) mod node_store;
-mod safe_tree;
-mod tree_policy;
+pub(crate) mod safe_tree;
+pub(crate) mod tree_policy;
 
-struct Search<D, S, T, NS, P> {
+pub(crate) struct Search<D, S, T, NS, P> {
     dp: D,
     simulator: S,
     tree_policy: T,
@@ -89,7 +89,7 @@ where
         // TODO: see a way to update root node info, as it is not propogated. Also, do we need that?
     }
 
-    fn once(&self, n: NS::NodeRef, s: &mut D::State)
+    pub(crate) fn once(&self, n: NS::NodeRef, s: &mut D::State)
     where
         P: MoveProcessor<D, I>,
     {
@@ -144,7 +144,7 @@ where
         }
     }
 
-    fn ensure_valid_starting_node(&self, n: NS::NodeRef, s: &mut D::State)
+    pub(crate) fn ensure_valid_starting_node(&self, n: NS::NodeRef, s: &mut D::State)
     where
         P: MoveProcessor<D, I>,
     {
@@ -170,12 +170,14 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::lib::decision_process::graph_dp::tests::{problem1, problem2, DSim};
     use crate::lib::decision_process::DefaultSimulator;
     use crate::lib::mcts::node_store::{ActionWithStaticPolicy, OnlyAction};
     use crate::lib::mcts::safe_tree::tests::print_tree;
     use crate::lib::mcts::safe_tree::ThreadSafeNodeStore;
-    use crate::lib::mcts::tree_policy::{PuctTreePolicy, RandomTreePolicy, UctTreePolicy, PuctWithDiricheletTreePolicy};
-    use crate::lib::decision_process::graph_dp::tests::{problem1, problem2, DSim};
+    use crate::lib::mcts::tree_policy::{
+        PuctTreePolicy, PuctWithDiricheletTreePolicy, RandomTreePolicy, UctTreePolicy,
+    };
     use crate::lib::{NoFilteringAndUniformPolicyForPuct, NoProcessing};
 
     #[test]
