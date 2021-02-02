@@ -1,5 +1,5 @@
 use crate::lib::mcts::node_store::{
-    ActionWithStaticPolicy, EdgeWithStaticData, NodeStore, OnlyAction,
+    ActionWithStaticPolicy, Edge as E, EdgeWithStaticData, Node as N, NodeStore, OnlyAction,
 };
 use atomic_float::AtomicF32;
 use num::FromPrimitive;
@@ -10,8 +10,6 @@ use std::ops::{Deref, Range};
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
-
-// TODO: complete this...
 
 pub struct ThreadSafeNodeStore<I>(PhantomData<I>);
 
@@ -159,7 +157,7 @@ impl<A> Node<A> {
     }
 }
 
-impl<A> crate::lib::mcts::node_store::Node<f32> for Node<A> {
+impl<A> N<f32> for Node<A> {
     fn finish_expanding(&self) {
         self.is_finished_expanding.store(true, Ordering::SeqCst)
     }
@@ -194,7 +192,7 @@ impl<A> crate::lib::mcts::node_store::Node<f32> for Node<A> {
     }
 }
 
-impl<A> crate::lib::mcts::node_store::Edge<f32> for Edge<A> {
+impl<A> E<f32> for Edge<A> {
     fn selection_count(&self) -> u32 {
         self.selection_count.load(Ordering::SeqCst)
     }
@@ -240,6 +238,25 @@ impl<A> Clone for NodeRef<A> {
 impl<A> crate::lib::mcts::node_store::Nullable for NodeRef<A> {
     fn is_some(&self) -> bool {
         !self.is_dangling()
+    }
+}
+
+pub(crate) fn get_total_simulation_counts<I>(ns: &ThreadSafeNodeStore<I>, n: NodeRef<I>) -> u32 {
+    if n.is_dangling() || !n.is_finished_expanding() {
+        0
+    } else {
+        ns.edges_outgoing(&n)
+            .map(|edge_ref| {
+                let edge = ns.get_edge(&n, edge_ref);
+                let node = ns.get_target_node(&edge);
+                if node.is_dangling() {
+                    edge.selection_count()
+                } else {
+                    let local_count = edge.selection_count() - node.total_selection_count();
+                    get_total_simulation_counts(ns, node) + local_count
+                }
+            })
+            .fold(0, |a, b| a + b)
     }
 }
 

@@ -198,11 +198,11 @@ impl Outcome<Player> for C4Outcome {
 
     fn reward_for_agent(&self, a: Player) -> Self::RewardType {
         if self.0 == 0 {
-            0.5
+            0.0
         } else if self.0 == a {
             1.0
         } else {
-            0.0
+            -1.0
         }
     }
 }
@@ -218,6 +218,7 @@ mod tests {
     use super::*;
     use crate::lib::decision_process::{DefaultSimulator, RandomSimulator};
     use crate::lib::mcts::node_store::{ActionWithStaticPolicy, Node, NodeStore, OnlyAction};
+    use crate::lib::mcts::safe_tree::get_total_simulation_counts;
     use crate::lib::mcts::safe_tree::tests::node_distribution;
     use crate::lib::mcts::safe_tree::tests::print_tree;
     use crate::lib::mcts::safe_tree::ThreadSafeNodeStore;
@@ -274,6 +275,10 @@ mod tests {
             s.once(node.clone(), &mut state);
         }
         node_distribution(s.store(), &node);
+        assert_eq!(
+            get_total_simulation_counts(s.store(), node.clone()) + 1,
+            node.total_selection_count()
+        );
         s.print_pv(node, None, None, 20);
     }
 
