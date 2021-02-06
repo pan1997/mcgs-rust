@@ -29,7 +29,7 @@ pub trait Outcome<Agent> {
 }
 
 pub trait Distance {
-    type NormType: Unsigned + PartialOrd;
+    type NormType: PartialOrd;
     fn distance(&self, other: &Self) -> Self::NormType;
 }
 
@@ -92,6 +92,14 @@ where
                 }
             }
         }
+    }
+}
+
+impl Distance for f32 {
+    type NormType = f32;
+
+    fn distance(&self, other: &Self) -> Self::NormType {
+        (*self - other).abs()
     }
 }
 

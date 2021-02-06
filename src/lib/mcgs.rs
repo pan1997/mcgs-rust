@@ -39,7 +39,7 @@ impl<P, S, G, X>
     Search<P, S, <<P::Outcome as Outcome<P::Agent>>::RewardType as Distance>::NormType, G, X>
 where
     P: DecisionProcess,
-    G: SearchGraph,
+    G: SearchGraph<P::State>,
     S: SelectionPolicy<P, G>,
     G::Node: SelectCountStore + OutcomeStore<P::Outcome>,
     G::Edge: SelectCountStore + OutcomeStore<P::Outcome> + Deref<Target = P::Action>,
@@ -74,8 +74,7 @@ where
         undo_stack: &mut Vec<P::UndoAction>,
     ) -> SelectionResult<&'a G::Node, P::Outcome> {
         let mut node = root;
-        debug_assert!(!self.search_graph.is_leaf(node));
-        loop {
+        while !self.search_graph.is_leaf(node) {
             let agent = self.problem.agent_to_act(state);
 
             let edge = self.search_graph.get_edge(
@@ -89,16 +88,17 @@ where
 
             trajectory.push((node, edge));
             undo_stack.push(self.problem.transition(state, &edge));
-            // TODO: check if edge is dangling,
-            if false {
-                // TODO: create new node
-                return SelectionResult::Expand(node);
+
+            // If this edge is dangling, we create a new node and then return it
+            if self.search_graph.is_dangling(edge) {
+                let next_node = self.search_graph.create_target(edge, state);
+                return SelectionResult::Expand(next_node);
             }
             let next_node = self.search_graph.get_target(edge);
 
             // Check if this is a transposition (next_node has extra samples)
-            let n_count = next_node.selection_count();
-            let e_count = edge.selection_count();
+            let n_count = next_node.sample_count();
+            let e_count = edge.sample_count();
             if n_count > e_count {
                 let delta = next_node
                     .expected_outcome()
@@ -119,6 +119,9 @@ where
 
             node = next_node;
         }
+
+        println!("hey.....");
+        SelectionResult::Expand(node)
     }
 
     fn expand(&self, node: &G::Node, state: &mut P::State) -> (P::Outcome, u32)
@@ -126,9 +129,6 @@ where
         X: Simulator<P>,
         G::Edge: From<P::Action>,
     {
-        //TODO: is this needed
-        //node.increment_selection_count();
-
         if let Some(outcome) = self.problem.is_finished(state) {
             node.add_sample(&outcome, 1);
             node.mark_solved();
@@ -177,6 +177,32 @@ where
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::lib::decision_process::graph_dp::tests::problem1;
+    use crate::lib::decision_process::{DefaultSimulator, RandomSimulator};
+    use crate::lib::mcgs::safe_dag::tests::print_graph;
+    use crate::lib::mcgs::safe_dag::SafeDag;
+    use crate::lib::mcts::node_store::OnlyAction;
+    use petgraph::prelude::NodeIndex;
+
     #[test]
-    fn basic() {}
+    fn basic() {
+        let s = Search::new(
+            problem1(),
+            SafeDag::<_, Vec<f32>>::new(),
+            RandomPolicy,
+            DefaultSimulator,
+            0.01,
+            1,
+        );
+
+        let state = &mut s.problem.start_state();
+        let n = s.search_graph.create_node(state);
+        print_graph(&s.search_graph, n, 0);
+        for _ in 0..10 {
+            s.one_iteration(n, state);
+            print_graph(&s.search_graph, n, 0);
+        }
+        SearchGraph::<NodeIndex>::drop_node(&s.search_graph, n);
+    }
 }

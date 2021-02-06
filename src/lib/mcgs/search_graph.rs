@@ -21,11 +21,11 @@ pub trait PriorPolicyStore {
     fn prior_policy_score(&self) -> f32;
 }
 
-pub trait SearchGraph {
+pub trait SearchGraph<S> {
     type Node;
     type Edge;
 
-    fn create_node<'a>(&self) -> &'a mut Self::Node;
+    fn create_node<'a>(&self, s: &S) -> &'a mut Self::Node;
     fn drop_node(&self, n: &mut Self::Node);
 
     fn is_leaf(&self, n: &Self::Node) -> bool;
@@ -36,5 +36,6 @@ pub trait SearchGraph {
     fn get_edge<'a>(&self, n: &'a Self::Node, ix: u32) -> &'a Self::Edge;
     fn get_target<'a>(&self, e: &'a Self::Edge) -> &'a Self::Node;
 
-    //fn get_node(&self, n: Self::NodeRef) -> &Self::Node;
+    fn create_target<'a>(&self, e: &'a Self::Edge, s: &S) -> &'a Self::Node;
+    fn is_dangling(&self, e: &Self::Edge) -> bool;
 }

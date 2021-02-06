@@ -8,15 +8,15 @@ use std::ops::Deref;
 
 pub(crate) trait SelectionPolicy<P, G>
 where
-    G: SearchGraph,
+    G: SearchGraph<P::State>,
     P: DecisionProcess,
 {
     //TODO: see if we can return the edge ref
     fn select(&self, problem: &P, store: &G, node: &G::Node, agent: P::Agent, depth: u32) -> u32;
 }
 
-struct RandomPolicy;
-impl<P: DecisionProcess, G: SearchGraph> SelectionPolicy<P, G> for RandomPolicy {
+pub(crate) struct RandomPolicy;
+impl<P: DecisionProcess, G: SearchGraph<P::State>> SelectionPolicy<P, G> for RandomPolicy {
     fn select(&self, _: &P, store: &G, node: &G::Node, _: P::Agent, _: u32) -> u32 {
         let k = store.children_count(node);
         debug_assert!(k > 0);
@@ -28,7 +28,7 @@ struct FirstNonVisitedPolicy;
 impl<P, G> SelectionPolicy<P, G> for FirstNonVisitedPolicy
 where
     P: DecisionProcess,
-    G: SearchGraph,
+    G: SearchGraph<P::State>,
     G::Edge: SelectCountStore,
 {
     fn select(&self, _: &P, store: &G, node: &G::Node, _: P::Agent, _: u32) -> u32 {
@@ -52,7 +52,7 @@ struct UctPolicy {
 impl<P, G> SelectionPolicy<P, G> for UctPolicy
 where
     P: DecisionProcess,
-    G: SearchGraph,
+    G: SearchGraph<P::State>,
     G::Edge: SelectCountStore + OutcomeStore<P::Outcome>,
     G::Node: SelectCountStore,
     <P::Outcome as Outcome<P::Agent>>::RewardType: ToPrimitive,
@@ -99,7 +99,7 @@ struct PuctPolicy {
 impl<P, G> SelectionPolicy<P, G> for PuctPolicy
 where
     P: DecisionProcess,
-    G: SearchGraph,
+    G: SearchGraph<P::State>,
     G::Edge: SelectCountStore + OutcomeStore<P::Outcome> + PriorPolicyStore,
     G::Node: SelectCountStore,
     <P::Outcome as Outcome<P::Agent>>::RewardType: ToPrimitive,
