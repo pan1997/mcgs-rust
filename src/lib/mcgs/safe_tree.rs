@@ -1,5 +1,7 @@
 use crate::lib::decision_process::Outcome;
-use crate::lib::mcgs::search_graph::{OutcomeStore, SearchGraph, SelectCountStore, PriorPolicyStore};
+use crate::lib::mcgs::search_graph::{
+    OutcomeStore, PriorPolicyStore, SearchGraph, SelectCountStore,
+};
 use crate::lib::mcts::node_store::{ActionWithStaticPolicy, OnlyAction};
 use atomic_float::AtomicF32;
 use num::ToPrimitive;
@@ -97,81 +99,16 @@ impl<I> SelectCountStore for Edge<I> {
     }
 }
 
-pub struct SafeDag<D, O> {
+pub struct SafeTree<D, O> {
     phantom: PhantomData<(D, O)>,
 }
 
-impl<D, O> SafeDag<D, O> {
+impl<D, O> SafeTree<D, O> {
     pub(crate) fn new() -> Self {
-        SafeDag {
+        SafeTree {
             phantom: PhantomData,
         }
     }
-}
-
-impl<S, O, D> SearchGraph<S> for SafeDag<D, O> {
-    type Node = Node<D>;
-    type Edge = Edge<D>;
-
-    fn create_node<'a>(&self, _: &S) -> &'a mut Self::Node {
-        unsafe { &mut *Box::into_raw(Box::new(Node::new())) }
-    }
-
-    fn drop_node(&self, n: &mut Self::Node) {
-        // TODO: handle children
-        unsafe {
-            Box::from_raw(n);
-        }
-    }
-
-    fn is_leaf(&self, n: &Self::Node) -> bool {
-        // Not checking for has_been_expanded, as this check is valid even for nodes that have
-        // not been expanded
-        unsafe { &*n.edges.get() }.is_empty()
-    }
-
-    fn children_count(&self, n: &Self::Node) -> u32 {
-        unsafe { &*n.edges.get() }.len() as u32
-    }
-
-    fn create_children<I: Into<Self::Edge>, L: Iterator<Item = I>>(&self, n: &Self::Node, l: L) {
-        if !n.has_been_expanded.swap(true, Ordering::SeqCst) {
-            // This is the first time we are expanding this node
-            let children = unsafe { &mut *n.edges.get() };
-            for e in l {
-                children.push(e.into());
-            }
-        }
-    }
-
-    fn get_edge<'a>(&self, n: &'a Self::Node, ix: u32) -> &'a Self::Edge {
-        debug_assert!(n.has_been_expanded.load(Ordering::SeqCst));
-        unsafe { &(&*n.edges.get())[ix as usize] }
-    }
-
-    fn get_target<'a>(&self, e: &'a Self::Edge) -> &'a Self::Node {
-        debug_assert!(e.node_created.load(Ordering::SeqCst));
-        unsafe { (*e.node.get()).as_ref().unwrap() }
-    }
-
-    fn create_target<'a>(&self, e: &'a Self::Edge, s: &S) -> &'a Self::Node {
-        if !e.node_created.swap(true, Ordering::SeqCst) {
-            unsafe {
-                (&mut *e.node.get()).replace(Node::new());
-                (*e.node.get()).as_ref().unwrap()
-            }
-        } else {
-            panic!("Recreating a target node.")
-        }
-    }
-
-    fn is_dangling(&self, e: &Self::Edge) -> bool {
-        !e.node_created.load(Ordering::SeqCst)
-    }
-}
-
-pub struct SafeTree<D, O> {
-    phantom: PhantomData<(D, O)>
 }
 
 impl<S, O, D> SearchGraph<S> for SafeTree<D, O> {
@@ -416,7 +353,7 @@ pub(crate) mod tests {
         }
         println!("{}", x);
     }
-    pub fn print_graph<O, D: Display>(ns: &SafeDag<D, O>, n: &Node<D>, offset: u32) {
+    pub fn print_graph<O, D: Display>(ns: &SafeTree<D, O>, n: &Node<D>, offset: u32) {
         println!(
             "node: {{s_count: {}, score: {}}}",
             n.selection_count.load(Ordering::SeqCst),

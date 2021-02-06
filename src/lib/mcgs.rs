@@ -1,15 +1,16 @@
 mod expansion_traits;
 mod graph_policy;
-mod safe_dag;
+mod safe_tree;
 mod search_graph;
 
 use graph_policy::*;
 use search_graph::*;
 
 use crate::lib::decision_process::{DecisionProcess, Distance, Outcome, Simulator};
-use crate::lib::mcgs::expansion_traits::ExpansionTrait;
+use crate::lib::mcgs::expansion_traits::{BlockExpansionTrait, ExpansionTrait};
 use std::cmp::{max, min};
 use std::ops::Deref;
+
 
 pub struct ExpansionResult<O, EI> {
     outcome: O,
@@ -41,7 +42,7 @@ struct Search<P, S, R, G, X> {
 
 enum SelectionResult<N, V> {
     Expand(N),
-    Propogate(V, u32), // The second arg is the weight
+    Propagate(N, V, u32), // The second arg is the weight
 }
 
 impl<P, S, G, X>
@@ -114,7 +115,8 @@ where
                     .reward_for_agent(agent)
                     .distance(&edge.expected_outcome().reward_for_agent(agent));
                 if delta > self.q_shorting_bound {
-                    return SelectionResult::Propogate(
+                    return SelectionResult::Propagate(
+                        next_node,
                         next_node.expected_outcome(),
                         min(self.maximum_trajectory_weight, n_count - e_count),
                     );
@@ -123,7 +125,7 @@ where
 
             // We need an additional terminal check, as we can mark non leaf nodes as terminal
             if next_node.is_solved() {
-                return SelectionResult::Propogate(next_node.expected_outcome(), 1);
+                return SelectionResult::Propagate(next_node, next_node.expected_outcome(), 1);
             }
 
             node = next_node;
@@ -133,28 +135,35 @@ where
         SelectionResult::Expand(node)
     }
 
-    fn expand<I>(&self, node: &G::Node, state: &mut P::State) -> (P::Outcome, u32)
+    fn expand<'a, I>(
+        &self,
+        node: &'a G::Node,
+        state: &mut P::State,
+    ) -> (&'a G::Node, P::Outcome, u32, bool)
     where
         X: ExpansionTrait<P, I>,
         G::Edge: From<I>,
     {
         let expansion_result = self.expand_operation.apply(&self.problem, state);
-        if expansion_result.prune {
-            node.add_sample(&expansion_result.outcome, 1);
-            node.mark_solved();
-        } else {
+        if !expansion_result.prune {
             self.search_graph
                 .create_children(node, expansion_result.edges);
         }
-        (expansion_result.outcome, 1)
+        (node, expansion_result.outcome, 1, expansion_result.prune)
     }
 
     fn propagate(
         &self,
         trajectory: &mut Vec<(&G::Node, &G::Edge)>,
+        node: &G::Node,
         outcome: P::Outcome,
         weight: u32,
+        prune: bool,
     ) {
+        node.add_sample(&outcome, weight);
+        if prune {
+            node.mark_solved();
+        }
         // TODO: add graph propogation
         while let Some((node, edge)) = trajectory.pop() {
             edge.add_sample(&outcome, weight);
@@ -171,16 +180,69 @@ where
         let undo_stack = &mut vec![];
         let s = self.select(root, state, trajectory, undo_stack);
 
-        let (outcome, weight) = match s {
+        let (node, outcome, weight, prune) = match s {
             SelectionResult::Expand(n) => self.expand(n, state),
-            SelectionResult::Propogate(outcome, weight) => (outcome, weight),
+            SelectionResult::Propagate(node, outcome, weight) => (node, outcome, weight, false),
         };
 
         while let Some(u) = undo_stack.pop() {
             self.problem.undo_transition(state, u);
         }
 
-        self.propagate(trajectory, outcome, weight);
+        self.propagate(trajectory, node, outcome, weight, prune);
+    }
+
+    fn one_block<I>(&self, root: &G::Node, state: &mut P::State, size: usize)
+    where
+        X: BlockExpansionTrait<P, I>,
+        G::Edge: From<I>,
+    {
+        let trajectories_plus = &mut vec![];
+        let undo_stack = &mut vec![];
+        let mut short_count = 0;
+        while trajectories_plus.len() < size && short_count < size {
+            let mut trajectory = vec![];
+            let s = self.select(root, state, &mut trajectory, undo_stack);
+            match s {
+                SelectionResult::Propagate(node, outcome, weight) => {
+                    self.propagate(&mut trajectory, node, outcome, weight, false);
+                    short_count += 1;
+                }
+                SelectionResult::Expand(node) => trajectories_plus.push((
+                    trajectory,
+                    node,
+                    self.expand_operation.accept(&self.problem, state),
+                )),
+            }
+            while let Some(u) = undo_stack.pop() {
+                self.problem.undo_transition(state, u);
+            }
+        }
+        let expansion_results = self.expand_operation.process_accepted();
+
+        let mut inverse_map = vec![0; expansion_results.len()];
+
+        for (i, (_, _, index)) in trajectories_plus.iter().enumerate() {
+            inverse_map[*index] = i;
+        }
+
+        for (expansion_result, trajectory_index) in expansion_results.into_iter().zip(inverse_map) {
+            let (trajectory, node, _) = &mut trajectories_plus[trajectory_index];
+            if !expansion_result.prune {
+                self.search_graph.create_children(node, expansion_result.edges);
+            }
+            self.propagate(trajectory, node, expansion_result.outcome, 1, expansion_result.prune);
+        }
+    }
+}
+
+impl<O: Clone, EI: Clone> Clone for ExpansionResult<O, EI> {
+    fn clone(&self) -> Self {
+        ExpansionResult {
+            outcome: self.outcome.clone(),
+            prune: self.prune,
+            edges: self.edges.clone()
+        }
     }
 }
 
@@ -189,19 +251,19 @@ mod tests {
     use super::*;
     use crate::lib::decision_process::graph_dp::tests::{problem1, problem2, DSim};
     use crate::lib::decision_process::{DefaultSimulator, RandomSimulator};
-    use crate::lib::mcgs::expansion_traits::{BasicExpansion, BasicExpansionWithUniformPrior};
-    use crate::lib::mcgs::safe_dag::tests::print_graph;
-    use crate::lib::mcgs::safe_dag::SafeDag;
-    use petgraph::prelude::NodeIndex;
+    use crate::lib::mcgs::expansion_traits::{BasicExpansion, BasicExpansionWithUniformPrior, BlockExpansionFromBasic};
+    use crate::lib::mcgs::safe_tree::tests::print_graph;
+    use crate::lib::mcgs::safe_tree::SafeTree;
     use crate::lib::mcts::node_store::ActionWithStaticPolicy;
+    use petgraph::prelude::NodeIndex;
 
     #[test]
     fn random() {
         let s = Search::new(
             problem1(),
-            SafeDag::<_, Vec<f32>>::new(),
+            SafeTree::<_, Vec<f32>>::new(),
             RandomPolicy,
-            BasicExpansion::new(DefaultSimulator),
+            BasicExpansion::new(DSim),
             0.01,
             1,
         );
@@ -220,9 +282,9 @@ mod tests {
     fn uct() {
         let s = Search::new(
             problem1(),
-            SafeDag::<_, Vec<f32>>::new(),
+            SafeTree::<_, Vec<f32>>::new(),
             UctPolicy::new(2.4),
-            BasicExpansion::new(DefaultSimulator),
+            BasicExpansion::new(DSim),
             0.01,
             1,
         );
@@ -238,10 +300,31 @@ mod tests {
     }
 
     #[test]
+    fn uct_block() {
+        let s = Search::new(
+            problem1(),
+            SafeTree::<_, Vec<f32>>::new(),
+            UctPolicy::new(2.4),
+            BlockExpansionFromBasic::new(BasicExpansion::new(DSim)),
+            0.01,
+            1,
+        );
+
+        let state = &mut s.problem.start_state();
+        let n = s.search_graph.create_node(state);
+        print_graph(&s.search_graph, n, 0);
+        for _ in 0..20 {
+            s.one_block(n, state, 5);
+            print_graph(&s.search_graph, n, 0);
+        }
+        SearchGraph::<NodeIndex>::drop_node(&s.search_graph, n);
+    }
+
+    #[test]
     fn puct_2p() {
         let s = Search::new(
             problem2(),
-            SafeDag::<ActionWithStaticPolicy<u32>, Vec<f32>>::new(),
+            SafeTree::<ActionWithStaticPolicy<u32>, Vec<f32>>::new(),
             PuctPolicy::new(2.0, 2.4),
             BasicExpansionWithUniformPrior::new(DSim),
             0.01,
@@ -262,9 +345,9 @@ mod tests {
     fn puct() {
         let s = Search::new(
             problem1(),
-            SafeDag::<ActionWithStaticPolicy<u32>, Vec<f32>>::new(),
+            SafeTree::<ActionWithStaticPolicy<u32>, Vec<f32>>::new(),
             PuctPolicy::new(2.0, 2.4),
-            BasicExpansionWithUniformPrior::new(DefaultSimulator),
+            BasicExpansionWithUniformPrior::new(DSim),
             0.01,
             1,
         );

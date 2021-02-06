@@ -277,8 +277,7 @@ pub(crate) mod tests {
             println!(
                 "node: {{s_count: {}, n_count: {}}}",
                 n.total_selection_count.load(Ordering::SeqCst),
-                n.sample_count.load(Ordering::SeqCst),
-                //n.expected_score()
+                n.sample_count.load(Ordering::SeqCst)
             );
             for e in ns.edges_outgoing(n) {
                 for _ in 0..d {

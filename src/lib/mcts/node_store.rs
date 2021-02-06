@@ -100,6 +100,14 @@ impl<A> Deref for OnlyAction<A> {
     }
 }
 
+impl<A: Clone> Clone for OnlyAction<A> {
+    fn clone(&self) -> Self {
+        OnlyAction {
+            action: self.action.clone()
+        }
+    }
+}
+
 pub(crate) struct ActionWithStaticPolicy<A> {
     pub(crate) action: A,
     pub(crate) static_policy_score: f32,
