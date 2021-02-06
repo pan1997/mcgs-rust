@@ -118,6 +118,72 @@ impl<S, O, D> SearchGraph<S> for SafeDag<D, O> {
     }
 
     fn drop_node(&self, n: &mut Self::Node) {
+        // TODO: handle children
+        unsafe {
+            Box::from_raw(n);
+        }
+    }
+
+    fn is_leaf(&self, n: &Self::Node) -> bool {
+        // Not checking for has_been_expanded, as this check is valid even for nodes that have
+        // not been expanded
+        unsafe { &*n.edges.get() }.is_empty()
+    }
+
+    fn children_count(&self, n: &Self::Node) -> u32 {
+        unsafe { &*n.edges.get() }.len() as u32
+    }
+
+    fn create_children<I: Into<Self::Edge>, L: Iterator<Item = I>>(&self, n: &Self::Node, l: L) {
+        if !n.has_been_expanded.swap(true, Ordering::SeqCst) {
+            // This is the first time we are expanding this node
+            let children = unsafe { &mut *n.edges.get() };
+            for e in l {
+                children.push(e.into());
+            }
+        }
+    }
+
+    fn get_edge<'a>(&self, n: &'a Self::Node, ix: u32) -> &'a Self::Edge {
+        debug_assert!(n.has_been_expanded.load(Ordering::SeqCst));
+        unsafe { &(&*n.edges.get())[ix as usize] }
+    }
+
+    fn get_target<'a>(&self, e: &'a Self::Edge) -> &'a Self::Node {
+        debug_assert!(e.node_created.load(Ordering::SeqCst));
+        unsafe { (*e.node.get()).as_ref().unwrap() }
+    }
+
+    fn create_target<'a>(&self, e: &'a Self::Edge, s: &S) -> &'a Self::Node {
+        if !e.node_created.swap(true, Ordering::SeqCst) {
+            unsafe {
+                (&mut *e.node.get()).replace(Node::new());
+                (*e.node.get()).as_ref().unwrap()
+            }
+        } else {
+            panic!("Recreating a target node.")
+        }
+    }
+
+    fn is_dangling(&self, e: &Self::Edge) -> bool {
+        !e.node_created.load(Ordering::SeqCst)
+    }
+}
+
+pub struct SafeTree<D, O> {
+    phantom: PhantomData<(D, O)>
+}
+
+impl<S, O, D> SearchGraph<S> for SafeTree<D, O> {
+    type Node = Node<D>;
+    type Edge = Edge<D>;
+
+    fn create_node<'a>(&self, _: &S) -> &'a mut Self::Node {
+        unsafe { &mut *Box::into_raw(Box::new(Node::new())) }
+    }
+
+    fn drop_node(&self, n: &mut Self::Node) {
+        // TODO: handle children
         unsafe {
             Box::from_raw(n);
         }
@@ -202,10 +268,10 @@ impl Samples {
 
                     let result_high: u32 = unsafe {
                         let o: f32 = std::mem::transmute(high);
-                        let o_weight = low.to_f32().unwrap();
                         let x_weight = count.to_f32().unwrap();
                         let new_weight = result_low.to_f32().unwrap();
-                        let r = (o * o_weight + x * x_weight) / new_weight;
+                        // Simple Moving Averages (SAM)
+                        let r = o + x_weight * (x - o) / new_weight;
                         std::mem::transmute(r)
                     };
 
