@@ -11,6 +11,7 @@ petgraph = "*"
 num = "*"
 atomic_float = "*"
 rand_distr = "*"
+parking_lot = "*"
 
 [dependencies.rand]
 version = "*"

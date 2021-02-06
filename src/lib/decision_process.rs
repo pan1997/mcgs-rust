@@ -28,6 +28,11 @@ pub trait Outcome<Agent> {
     fn reward_for_agent(&self, a: Agent) -> Self::RewardType;
 }
 
+pub trait Distance {
+    type NormType: Unsigned + PartialOrd;
+    fn distance(&self, other: &Self) -> Self::NormType;
+}
+
 pub trait Simulator<D: DecisionProcess> {
     fn sample_outcome(&self, d: &D, state: &mut D::State) -> D::Outcome;
 }
@@ -60,7 +65,9 @@ where
     }
 }
 
+use num::Unsigned;
 use rand::prelude::IteratorRandom;
+
 pub(crate) struct RandomSimulator;
 impl<D> Simulator<D> for RandomSimulator
 where
