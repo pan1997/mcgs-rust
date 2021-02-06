@@ -1,5 +1,5 @@
 use crate::lib::decision_process::Outcome;
-use crate::lib::mcgs::search_graph::{OutcomeStore, SearchGraph, SelectCountStore};
+use crate::lib::mcgs::search_graph::{OutcomeStore, SearchGraph, SelectCountStore, PriorPolicyStore};
 use crate::lib::mcts::node_store::{ActionWithStaticPolicy, OnlyAction};
 use atomic_float::AtomicF32;
 use num::ToPrimitive;
@@ -260,7 +260,7 @@ impl<I> OutcomeStore<Vec<f32>> for Node<I> {
     }
 
     fn add_sample(&self, outcome: &Vec<f32>, weight: u32) {
-        debug_assert!(outcome.len() == 1);
+        //debug_assert!(outcome.len() == 1);
         self.samples.add_sample(outcome[0], weight)
     }
 
@@ -283,7 +283,7 @@ impl<I> OutcomeStore<Vec<f32>> for Edge<I> {
     }
 
     fn add_sample(&self, outcome: &Vec<f32>, weight: u32) {
-        debug_assert!(outcome.len() == 1);
+        //debug_assert!(outcome.len() == 1);
         self.samples.add_sample(outcome[0], weight)
     }
 
@@ -301,6 +301,20 @@ impl<A> Deref for Edge<OnlyAction<A>> {
 
     fn deref(&self) -> &Self::Target {
         &self.data.action
+    }
+}
+
+impl<A> Deref for Edge<ActionWithStaticPolicy<A>> {
+    type Target = A;
+
+    fn deref(&self) -> &Self::Target {
+        &self.data.action
+    }
+}
+
+impl<A> PriorPolicyStore for Edge<ActionWithStaticPolicy<A>> {
+    fn prior_policy_score(&self) -> f32 {
+        self.data.static_policy_score
     }
 }
 

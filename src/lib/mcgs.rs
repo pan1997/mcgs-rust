@@ -10,7 +10,8 @@ use crate::lib::decision_process::{DecisionProcess, Distance, Outcome, Simulator
 use crate::lib::mcgs::expansion_traits::ExpansionTrait;
 use std::cmp::{max, min};
 use std::ops::Deref;
-pub struct SimulationResult<O, EI> {
+
+pub struct ExpansionResult<O, EI> {
     outcome: O,
     prune: bool,
     edges: EI,
@@ -137,9 +138,7 @@ where
         X: ExpansionTrait<P, I>,
         G::Edge: From<I>,
     {
-        let expansion_result = self
-            .expand_operation
-            .expand_and_simulate(&self.problem, state);
+        let expansion_result = self.expand_operation.apply(&self.problem, state);
         if expansion_result.prune {
             node.add_sample(&expansion_result.outcome, 1);
             node.mark_solved();
@@ -188,13 +187,13 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::lib::decision_process::graph_dp::tests::problem1;
+    use crate::lib::decision_process::graph_dp::tests::{problem1, problem2, DSim};
     use crate::lib::decision_process::{DefaultSimulator, RandomSimulator};
-    use crate::lib::mcgs::expansion_traits::BasicExpansion;
+    use crate::lib::mcgs::expansion_traits::{BasicExpansion, BasicExpansionWithUniformPrior};
     use crate::lib::mcgs::safe_dag::tests::print_graph;
     use crate::lib::mcgs::safe_dag::SafeDag;
-    use crate::lib::mcts::node_store::OnlyAction;
     use petgraph::prelude::NodeIndex;
+    use crate::lib::mcts::node_store::ActionWithStaticPolicy;
 
     #[test]
     fn random() {
@@ -224,6 +223,48 @@ mod tests {
             SafeDag::<_, Vec<f32>>::new(),
             UctPolicy::new(2.4),
             BasicExpansion::new(DefaultSimulator),
+            0.01,
+            1,
+        );
+
+        let state = &mut s.problem.start_state();
+        let n = s.search_graph.create_node(state);
+        print_graph(&s.search_graph, n, 0);
+        for _ in 0..100 {
+            s.one_iteration(n, state);
+            print_graph(&s.search_graph, n, 0);
+        }
+        SearchGraph::<NodeIndex>::drop_node(&s.search_graph, n);
+    }
+
+    #[test]
+    fn puct_2p() {
+        let s = Search::new(
+            problem2(),
+            SafeDag::<ActionWithStaticPolicy<u32>, Vec<f32>>::new(),
+            PuctPolicy::new(2.0, 2.4),
+            BasicExpansionWithUniformPrior::new(DSim),
+            0.01,
+            1,
+        );
+
+        let state = &mut s.problem.start_state();
+        let n = s.search_graph.create_node(state);
+        print_graph(&s.search_graph, n, 0);
+        for _ in 0..250 {
+            s.one_iteration(n, state);
+            print_graph(&s.search_graph, n, 0);
+        }
+        SearchGraph::<NodeIndex>::drop_node(&s.search_graph, n);
+    }
+
+    #[test]
+    fn puct() {
+        let s = Search::new(
+            problem1(),
+            SafeDag::<ActionWithStaticPolicy<u32>, Vec<f32>>::new(),
+            PuctPolicy::new(2.0, 2.4),
+            BasicExpansionWithUniformPrior::new(DefaultSimulator),
             0.01,
             1,
         );

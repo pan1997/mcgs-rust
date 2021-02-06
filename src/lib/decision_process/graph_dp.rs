@@ -63,7 +63,15 @@ impl crate::lib::decision_process::Outcome<Agent> for Vec<f32> {
     type RewardType = f32;
 
     fn reward_for_agent(&self, a: u32) -> Self::RewardType {
-        *self.get(a as usize).unwrap()
+        match a {
+            0 => self[0],
+            1 => if self.len() == 1 {
+                -self[0]
+            } else {
+                self[1]
+            },
+            _ => panic!("vdcdsvc")
+        }
     }
 }
 
