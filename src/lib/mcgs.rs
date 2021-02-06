@@ -186,7 +186,7 @@ mod tests {
     use petgraph::prelude::NodeIndex;
 
     #[test]
-    fn basic() {
+    fn random() {
         let s = Search::new(
             problem1(),
             SafeDag::<_, Vec<f32>>::new(),
@@ -200,6 +200,27 @@ mod tests {
         let n = s.search_graph.create_node(state);
         print_graph(&s.search_graph, n, 0);
         for _ in 0..10 {
+            s.one_iteration(n, state);
+            print_graph(&s.search_graph, n, 0);
+        }
+        SearchGraph::<NodeIndex>::drop_node(&s.search_graph, n);
+    }
+
+    #[test]
+    fn uct() {
+        let s = Search::new(
+            problem1(),
+            SafeDag::<_, Vec<f32>>::new(),
+            UctPolicy::new(2.4),
+            DefaultSimulator,
+            0.01,
+            1,
+        );
+
+        let state = &mut s.problem.start_state();
+        let n = s.search_graph.create_node(state);
+        print_graph(&s.search_graph, n, 0);
+        for _ in 0..100 {
             s.one_iteration(n, state);
             print_graph(&s.search_graph, n, 0);
         }

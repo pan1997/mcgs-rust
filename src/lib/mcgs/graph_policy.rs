@@ -45,8 +45,16 @@ where
     }
 }
 
-struct UctPolicy {
+pub struct UctPolicy {
     exploration_weight: f32,
+}
+
+impl UctPolicy {
+    pub fn new(w: f32)-> Self {
+        UctPolicy {
+            exploration_weight: w
+        }
+    }
 }
 
 impl<P, G> SelectionPolicy<P, G> for UctPolicy
@@ -87,13 +95,22 @@ where
         }
         // Returns an invalid edge when all edges have been visited
         // TODO: do we need to switch to random for this case?
-        edge_count
+        best_edge
     }
 }
 
-struct PuctPolicy {
+pub struct PuctPolicy {
     puct_init: f32,
     puct_base: f32,
+}
+
+impl PuctPolicy {
+    pub fn new(base: f32, init: f32) -> Self {
+        PuctPolicy {
+            puct_base: base,
+            puct_init: init
+        }
+    }
 }
 
 impl<P, G> SelectionPolicy<P, G> for PuctPolicy
@@ -136,6 +153,6 @@ where
         }
         // Returns an invalid edge when all edges have been visited
         // TODO: do we need to switch to random for this case?
-        edge_count
+        best_edge
     }
 }

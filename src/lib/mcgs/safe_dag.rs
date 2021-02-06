@@ -1,6 +1,6 @@
 use crate::lib::decision_process::Outcome;
 use crate::lib::mcgs::search_graph::{OutcomeStore, SearchGraph, SelectCountStore};
-use crate::lib::mcts::node_store::OnlyAction;
+use crate::lib::mcts::node_store::{OnlyAction, ActionWithStaticPolicy};
 use atomic_float::AtomicF32;
 use num::ToPrimitive;
 use parking_lot::{RawRwLock, RwLock};
@@ -31,7 +31,6 @@ pub struct Edge<I> {
     node: UnsafeCell<Option<Node<I>>>,
 }
 
-// TODO: see if ordering can be relaxed
 impl<I> OutcomeStore<f32> for Node<I> {
     fn expected_outcome(&self) -> f32 {
         self.samples.expected_sample()
@@ -54,7 +53,6 @@ impl<I> OutcomeStore<f32> for Node<I> {
     }
 }
 
-// TODO: see if ordering can be relaxed
 impl<I> OutcomeStore<f32> for Edge<I> {
     fn expected_outcome(&self) -> f32 {
         self.samples.expected_sample()
@@ -245,14 +243,13 @@ impl Display for Samples {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let (w, x) = self.atomic_tuple();
         if w == u32::MAX {
-            write!(f, "{{value: {:.2e}}}", x)
+            write!(f, "{{value: {:.2}}}", x)
         } else {
-            write!(f, "{{value: {:.2e}, count: {}}}", x, w)
+            write!(f, "{{value: {:.2}, count: {}}}", x, w)
         }
     }
 }
 
-// TODO: see if ordering can be relaxed
 impl<I> OutcomeStore<Vec<f32>> for Node<I> {
     fn expected_outcome(&self) -> Vec<f32> {
         vec![self.samples.expected_sample()]
@@ -276,7 +273,6 @@ impl<I> OutcomeStore<Vec<f32>> for Node<I> {
     }
 }
 
-// TODO: see if ordering can be relaxed
 impl<I> OutcomeStore<Vec<f32>> for Edge<I> {
     fn expected_outcome(&self) -> Vec<f32> {
         vec![self.samples.expected_sample()]
