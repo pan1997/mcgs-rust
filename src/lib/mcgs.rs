@@ -1,3 +1,4 @@
+mod expansion_traits;
 mod graph_policy;
 mod safe_dag;
 mod search_graph;
@@ -6,9 +7,16 @@ use graph_policy::*;
 use search_graph::*;
 
 use crate::lib::decision_process::{DecisionProcess, Distance, Outcome, Simulator};
+use crate::lib::mcgs::expansion_traits::ExpansionTrait;
 use std::cmp::{max, min};
 use std::ops::Deref;
+pub struct SimulationResult<O, EI> {
+    outcome: O,
+    prune: bool,
+    edges: EI,
+}
 
+// TODO: update this doc
 /// The first iteration of this is NOT Thread safe, as it is known that the bottleneck of
 /// AlphaZero puct is actually the expansion phase which involves neural network evaluation. A
 /// central thread/process is responsible for querying and updating the search tree based on work
@@ -25,7 +33,7 @@ struct Search<P, S, R, G, X> {
     problem: P,
     search_graph: G,
     selection_policy: S,
-    simulator: X,
+    expand_operation: X,
     q_shorting_bound: R,
     maximum_trajectory_weight: u32,
 }
@@ -49,7 +57,7 @@ where
         problem: P,
         search_graph: G,
         selection_policy: S,
-        simulator: X,
+        expand_operation: X,
         q_shorting_bound: <<P::Outcome as Outcome<P::Agent>>::RewardType as Distance>::NormType,
         maximum_trajectory_weight: u32,
     ) -> Self {
@@ -57,7 +65,7 @@ where
             problem,
             search_graph,
             selection_policy,
-            simulator,
+            expand_operation,
             q_shorting_bound,
             maximum_trajectory_weight,
         }
@@ -124,20 +132,22 @@ where
         SelectionResult::Expand(node)
     }
 
-    fn expand(&self, node: &G::Node, state: &mut P::State) -> (P::Outcome, u32)
+    fn expand<I>(&self, node: &G::Node, state: &mut P::State) -> (P::Outcome, u32)
     where
-        X: Simulator<P>,
-        G::Edge: From<P::Action>,
+        X: ExpansionTrait<P, I>,
+        G::Edge: From<I>,
     {
-        if let Some(outcome) = self.problem.is_finished(state) {
-            node.add_sample(&outcome, 1);
+        let expansion_result = self
+            .expand_operation
+            .expand_and_simulate(&self.problem, state);
+        if expansion_result.prune {
+            node.add_sample(&expansion_result.outcome, 1);
             node.mark_solved();
-            (outcome, 1)
         } else {
             self.search_graph
-                .create_children(node, self.problem.legal_actions(state));
-            (self.simulator.sample_outcome(&self.problem, state), 1)
+                .create_children(node, expansion_result.edges);
         }
+        (expansion_result.outcome, 1)
     }
 
     fn propagate(
@@ -153,10 +163,10 @@ where
         }
     }
 
-    fn one_iteration(&self, root: &G::Node, state: &mut P::State)
+    fn one_iteration<I>(&self, root: &G::Node, state: &mut P::State)
     where
-        X: Simulator<P>,
-        G::Edge: From<P::Action>,
+        X: ExpansionTrait<P, I>,
+        G::Edge: From<I>,
     {
         let trajectory = &mut vec![];
         let undo_stack = &mut vec![];
@@ -180,6 +190,7 @@ mod tests {
     use super::*;
     use crate::lib::decision_process::graph_dp::tests::problem1;
     use crate::lib::decision_process::{DefaultSimulator, RandomSimulator};
+    use crate::lib::mcgs::expansion_traits::BasicExpansion;
     use crate::lib::mcgs::safe_dag::tests::print_graph;
     use crate::lib::mcgs::safe_dag::SafeDag;
     use crate::lib::mcts::node_store::OnlyAction;
@@ -191,7 +202,7 @@ mod tests {
             problem1(),
             SafeDag::<_, Vec<f32>>::new(),
             RandomPolicy,
-            DefaultSimulator,
+            BasicExpansion::new(DefaultSimulator),
             0.01,
             1,
         );
@@ -212,7 +223,7 @@ mod tests {
             problem1(),
             SafeDag::<_, Vec<f32>>::new(),
             UctPolicy::new(2.4),
-            DefaultSimulator,
+            BasicExpansion::new(DefaultSimulator),
             0.01,
             1,
         );

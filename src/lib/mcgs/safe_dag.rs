@@ -1,6 +1,6 @@
 use crate::lib::decision_process::Outcome;
 use crate::lib::mcgs::search_graph::{OutcomeStore, SearchGraph, SelectCountStore};
-use crate::lib::mcts::node_store::{OnlyAction, ActionWithStaticPolicy};
+use crate::lib::mcts::node_store::{ActionWithStaticPolicy, OnlyAction};
 use atomic_float::AtomicF32;
 use num::ToPrimitive;
 use parking_lot::{RawRwLock, RwLock};
@@ -304,10 +304,10 @@ impl<A> Deref for Edge<OnlyAction<A>> {
     }
 }
 
-impl<A> From<A> for Edge<OnlyAction<A>> {
-    fn from(a: A) -> Self {
+impl<I> From<I> for Edge<I> {
+    fn from(data: I) -> Self {
         Edge {
-            data: OnlyAction { action: a },
+            data,
             selection_count: AtomicU32::new(0),
             samples: Samples::new(),
             node_created: AtomicBool::new(false),

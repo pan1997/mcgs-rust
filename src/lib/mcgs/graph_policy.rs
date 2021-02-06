@@ -50,9 +50,9 @@ pub struct UctPolicy {
 }
 
 impl UctPolicy {
-    pub fn new(w: f32)-> Self {
+    pub fn new(w: f32) -> Self {
         UctPolicy {
-            exploration_weight: w
+            exploration_weight: w,
         }
     }
 }
@@ -108,7 +108,7 @@ impl PuctPolicy {
     pub fn new(base: f32, init: f32) -> Self {
         PuctPolicy {
             puct_base: base,
-            puct_init: init
+            puct_init: init,
         }
     }
 }
