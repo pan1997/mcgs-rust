@@ -1,7 +1,7 @@
 use crate::lib::mcts::node_store::{Edge, EdgeWithStaticData, Node, NodeStore, TreePolicy};
 use rand::prelude::IteratorRandom;
 use rand::prelude::*;
-use rand::{thread_rng, Rng};
+use rand::Rng;
 use rand_distr::Dirichlet;
 
 pub(crate) struct RandomTreePolicy;

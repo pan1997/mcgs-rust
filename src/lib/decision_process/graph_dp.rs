@@ -92,7 +92,7 @@ pub(crate) mod tests {
             graph: Graph::new(),
             terminal_states: Default::default(),
         };
-        let mut g = &mut result.graph;
+        let g = &mut result.graph;
         // all nodes have the same agent
         let n0 = g.add_node(0);
         let n1 = g.add_node(0);
@@ -112,8 +112,8 @@ pub(crate) mod tests {
     impl Simulator<GraphDP> for DSim {
         fn sample_outcome(
             &self,
-            d: &GraphDP,
-            state: &mut <GraphDP as DecisionProcess>::State,
+            _: &GraphDP,
+            _: &mut <GraphDP as DecisionProcess>::State,
         ) -> <GraphDP as DecisionProcess>::Outcome {
             vec![0.0, 0.0]
         }

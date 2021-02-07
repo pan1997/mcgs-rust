@@ -1,14 +1,15 @@
 pub(crate) mod expansion_traits;
 pub(crate) mod graph_policy;
 pub(crate) mod safe_tree;
+mod samples;
 pub(crate) mod search_graph;
 
 use graph_policy::*;
 use search_graph::*;
 
-use crate::lib::decision_process::{DecisionProcess, Distance, Outcome, Simulator};
+use crate::lib::decision_process::{DecisionProcess, Distance, Outcome};
 use crate::lib::mcgs::expansion_traits::{BlockExpansionTrait, ExpansionTrait};
-use std::cmp::{max, min};
+use std::cmp::min;
 use std::fmt::Display;
 use std::ops::Deref;
 use std::time::Instant;
@@ -251,6 +252,55 @@ where
         }
     }
 
+    fn end_search(
+        &self,
+        start_time: Instant,
+        root: &G::Node,
+        node_limit: Option<u32>,
+        time_limit: Option<u128>,
+        confidence: Option<u32>,
+    ) -> bool {
+        if time_limit.is_some() {
+            let elapsed = start_time.elapsed().as_millis();
+            if elapsed > time_limit.unwrap() {
+                return true;
+            }
+        }
+        if node_limit.is_some() {
+            let node_count = root.selection_count();
+            if node_count > node_limit.unwrap() {
+                return true;
+            }
+        }
+        if confidence.is_some() {
+            let node_count = root.selection_count();
+            let limit = ((node_count as u64 * confidence.unwrap() as u64) / 100) as u32;
+            let best_edge_count = self
+                .search_graph
+                .get_edge(
+                    root,
+                    MostVisitedPolicy.select(&self.problem, &self.search_graph, root),
+                )
+                .selection_count();
+            if best_edge_count > limit {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn start(
+        &self,
+        root: &G::Node,
+        state: &mut P::State,
+        node_limit: Option<u32>,
+        time_limit: Option<u128>,
+        confidence: Option<u32>, // out of 100
+        worker_count: u32
+    ) {
+
+    }
+
     pub(crate) fn print_pv<'a>(
         &self,
         mut root: &'a G::Node,
@@ -262,7 +312,7 @@ where
         P::Action: Display,
         P::Outcome: Display,
     {
-        let selection_count = (root.selection_count() - start_count.or(Some(0)).unwrap());
+        let selection_count = root.selection_count() - start_count.or(Some(0)).unwrap();
         print!("{}kN ", selection_count / 1000);
         if start_time.is_some() {
             let elapsed = start_time.unwrap().elapsed().as_millis();
@@ -319,14 +369,12 @@ impl<O: Clone, EI: Clone> Clone for ExpansionResult<O, EI> {
 mod tests {
     use super::*;
     use crate::lib::decision_process::graph_dp::tests::{problem1, problem2, DSim};
-    use crate::lib::decision_process::{DefaultSimulator, RandomSimulator};
     use crate::lib::mcgs::expansion_traits::{
         BasicExpansion, BasicExpansionWithUniformPrior, BlockExpansionFromBasic,
     };
     use crate::lib::mcgs::safe_tree::tests::print_graph;
     use crate::lib::mcgs::safe_tree::SafeTree;
-    use crate::lib::mcts::node_store::ActionWithStaticPolicy;
-    use petgraph::prelude::NodeIndex;
+    use crate::lib::ActionWithStaticPolicy;
 
     #[test]
     fn random() {
@@ -386,7 +434,7 @@ mod tests {
             s.one_block(&n, state, 5);
             print_graph(&s.search_graph, &n, 0);
         }
-        let n = s.search_graph.create_node(state);
+        s.search_graph.create_node(state);
     }
 
     #[test]
@@ -414,7 +462,7 @@ mod tests {
         let s = Search::new(
             problem1(),
             SafeTree::<ActionWithStaticPolicy<u32>, Vec<f32>>::new(),
-            PuctPolicy::new(2.0, 2.4),
+            PuctPolicy::new(2000.0, 2.4),
             BasicExpansionWithUniformPrior::new(DSim),
             0.01,
             1,

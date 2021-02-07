@@ -65,7 +65,6 @@ where
     }
 }
 
-use num::Unsigned;
 use rand::prelude::IteratorRandom;
 
 pub(crate) struct RandomSimulator;

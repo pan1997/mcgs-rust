@@ -1,9 +1,63 @@
 use crate::lib::decision_process::DecisionProcess;
-use crate::lib::mcts::node_store::{ActionWithStaticPolicy, OnlyAction};
+use std::fmt::{Display, Formatter};
+use std::ops::Deref;
 
 pub(crate) mod decision_process;
 pub(crate) mod mcgs;
 pub(crate) mod mcts;
+
+pub(crate) struct OnlyAction<A> {
+    pub(crate) action: A,
+}
+
+impl<A> Display for OnlyAction<A>
+where
+    A: Display,
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{{action: {}}}", self.action)
+    }
+}
+
+impl<A> Deref for OnlyAction<A> {
+    type Target = A;
+    fn deref(&self) -> &Self::Target {
+        &self.action
+    }
+}
+
+impl<A: Clone> Clone for OnlyAction<A> {
+    fn clone(&self) -> Self {
+        OnlyAction {
+            action: self.action.clone(),
+        }
+    }
+}
+
+pub(crate) struct ActionWithStaticPolicy<A> {
+    pub(crate) action: A,
+    pub(crate) static_policy_score: f32,
+}
+
+impl<A> Display for ActionWithStaticPolicy<A>
+where
+    A: Display,
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{{action: {}, static_score: {}}}",
+            self.action, self.static_policy_score
+        )
+    }
+}
+
+impl<A> Deref for ActionWithStaticPolicy<A> {
+    type Target = A;
+    fn deref(&self) -> &Self::Target {
+        &self.action
+    }
+}
 
 pub trait MoveProcessor<D: DecisionProcess, E> {
     type Iter: Iterator<Item = E>;

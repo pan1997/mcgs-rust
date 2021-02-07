@@ -1,22 +1,32 @@
 mod lib;
 use crate::lib::decision_process::c4::{Move, C4};
-use crate::lib::decision_process::DecisionProcess;
+use crate::lib::decision_process::{DecisionProcess, DefaultSimulator};
 use crate::lib::decision_process::RandomSimulator;
 use crate::lib::mcgs::expansion_traits::{BasicExpansion, BasicExpansionWithUniformPrior};
-use crate::lib::mcgs::graph_policy::{MostVisitedPolicy, UctPolicy};
+use crate::lib::mcgs::graph_policy::{MostVisitedPolicy, PuctPolicy, UctPolicy};
 use crate::lib::mcgs::safe_tree::SafeTree;
 use crate::lib::mcgs::search_graph::{OutcomeStore, SearchGraph, SelectCountStore};
 use crate::lib::mcgs::Search;
-use crate::lib::mcts::node_store::ActionWithStaticPolicy;
+use crate::lib::{ActionWithStaticPolicy, OnlyAction};
 use std::time::Instant;
 use text_io::read;
 
 fn main() {
+    /*
     let s = Search::new(
         C4::new(9, 7),
         SafeTree::<ActionWithStaticPolicy<_>, Vec<f32>>::new(),
-        UctPolicy::new(2.4),
+        PuctPolicy::new(2.4, 20.0),
         BasicExpansionWithUniformPrior::new(RandomSimulator),
+        0.01,
+        1,
+    );*/
+
+    let s = Search::new(
+        C4::new(9, 7),
+        SafeTree::<OnlyAction<_>, Vec<f32>>::new(),
+        UctPolicy::new(2.4),
+        BasicExpansion::new(DefaultSimulator),
         0.01,
         1,
     );
@@ -37,10 +47,10 @@ fn main() {
             "board" => println!("{}", state),
             "analyse" => {
                 println!("{}", state);
-                let time: u128 = read!();
+                let time_limit: u128 = read!();
                 let node = s.search_graph().create_node(&state);
                 let start_instant = Instant::now();
-                for _ in 0..2000000 {
+                for _ in 0..5000000 {
                     s.one_iteration(&node, &mut state);
                 }
                 let mut trajectory = vec![];

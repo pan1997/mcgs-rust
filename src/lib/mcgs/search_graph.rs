@@ -1,5 +1,3 @@
-use std::ops::Deref;
-
 pub trait OutcomeStore<O> {
     fn expected_outcome(&self) -> O;
     fn is_solved(&self) -> bool;

@@ -211,8 +211,8 @@ impl Outcome<Player> for f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::lib::decision_process::{DefaultSimulator, RandomSimulator};
-    use crate::lib::mcts::node_store::{ActionWithStaticPolicy, Node, NodeStore, OnlyAction};
+    use crate::lib::decision_process::RandomSimulator;
+    use crate::lib::mcts::node_store::{Node, NodeStore};
     use crate::lib::mcts::safe_tree::get_total_simulation_counts;
     use crate::lib::mcts::safe_tree::tests::node_distribution;
     use crate::lib::mcts::safe_tree::tests::print_tree;
@@ -221,7 +221,9 @@ mod tests {
         PuctTreePolicy, PuctWithDiricheletTreePolicy, UctTreePolicy,
     };
     use crate::lib::mcts::Search;
-    use crate::lib::{NoFilteringAndUniformPolicyForPuct, NoProcessing};
+    use crate::lib::{
+        ActionWithStaticPolicy, NoFilteringAndUniformPolicyForPuct, NoProcessing, OnlyAction,
+    };
 
     #[test]
     fn basic() {

@@ -4,7 +4,6 @@ use crate::lib::mcgs::search_graph::{
 };
 use num::ToPrimitive;
 use rand::{thread_rng, Rng};
-use std::ops::Deref;
 
 pub trait SelectionPolicy<P, G>
 where
@@ -163,7 +162,8 @@ where
 
             let edge_selection_count = edge.selection_count();
 
-            let p_uct = ((node_selection_count + self.puct_base + 1.0) / self.puct_base).ln();
+            let p_uct = self.puct_init
+                + ((node_selection_count + self.puct_base + 1.0) / self.puct_base).ln();
             let exploration_score =
                 p_uct * edge.prior_policy_score() * (c_sqrt / (1 + edge_selection_count) as f32);
 

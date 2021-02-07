@@ -1,13 +1,10 @@
-use crate::lib::mcts::node_store::{
-    ActionWithStaticPolicy, Edge as E, EdgeWithStaticData, Node as N, NodeStore, OnlyAction,
-};
+use crate::lib::mcts::node_store::{Edge as E, EdgeWithStaticData, Node as N, NodeStore};
+use crate::lib::ActionWithStaticPolicy;
 use atomic_float::AtomicF32;
 use num::FromPrimitive;
 use std::cell::{Cell, UnsafeCell};
-use std::fmt::{Display, Formatter};
 use std::marker::PhantomData;
 use std::ops::{Deref, Range};
-use std::ptr::NonNull;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 

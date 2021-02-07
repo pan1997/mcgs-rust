@@ -1,20 +1,12 @@
-use crate::lib::decision_process::Outcome;
+use crate::lib::mcgs::samples::Samples;
 use crate::lib::mcgs::search_graph::{
     OutcomeStore, PriorPolicyStore, SearchGraph, SelectCountStore,
 };
-use crate::lib::mcts::node_store::{ActionWithStaticPolicy, OnlyAction};
-use atomic_float::AtomicF32;
-use num::ToPrimitive;
-use parking_lot::{RawRwLock, RwLock};
+use crate::lib::{ActionWithStaticPolicy, OnlyAction};
 use std::cell::UnsafeCell;
-use std::fmt::{Display, Formatter};
 use std::marker::PhantomData;
-use std::ops::{Add, Deref, Div, Mul};
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
-
-struct Samples {
-    data: AtomicU64,
-}
+use std::ops::Deref;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 pub struct Node<I> {
     selection_count: AtomicU32,
@@ -172,76 +164,6 @@ impl<I> Node<I> {
             samples: Samples::new(),
             has_been_expanded: AtomicBool::new(false),
             edges: Default::default(),
-        }
-    }
-}
-
-impl Samples {
-    fn new() -> Self {
-        Samples {
-            data: AtomicU64::new(0),
-        }
-    }
-
-    fn add_sample(&self, x: f32, count: u32) {
-        // TODO: check order
-        self.data
-            .fetch_update(Ordering::Acquire, Ordering::Relaxed, |u| {
-                let low: u32 = u as u32;
-                if low == u32::MAX {
-                    // Do not change if it has been solved
-                    Some(u)
-                } else {
-                    let high: u32 = (u >> 32) as u32;
-
-                    let result_low: u32 = low + count;
-
-                    let result_high: u32 = unsafe {
-                        let o: f32 = std::mem::transmute(high);
-                        let x_weight = count.to_f32().unwrap();
-                        let new_weight = result_low.to_f32().unwrap();
-                        // Simple Moving Averages (SAM)
-                        let r = o + x_weight * (x - o) / new_weight;
-                        std::mem::transmute(r)
-                    };
-
-                    Some(((result_high as u64) << 32) + (result_low as u64))
-                }
-            });
-    }
-
-    fn count(&self) -> u32 {
-        self.atomic_tuple().0
-    }
-
-    fn expected_sample(&self) -> f32 {
-        self.atomic_tuple().1
-    }
-
-    fn atomic_tuple(&self) -> (u32, f32) {
-        let d = self.data.load(Ordering::SeqCst);
-        (d as u32, unsafe { std::mem::transmute((d >> 32) as u32) })
-    }
-
-    fn is_solved(&self) -> bool {
-        self.count() == u32::MAX
-    }
-
-    fn mark_solved(&self) {
-        self.data
-            .fetch_update(Ordering::Acquire, Ordering::Relaxed, |u| {
-                Some(((u >> 32) << 32) + (u32::MAX as u64))
-            });
-    }
-}
-
-impl Display for Samples {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let (w, x) = self.atomic_tuple();
-        if w == u32::MAX {
-            write!(f, "{{value: {:.2}}}", x)
-        } else {
-            write!(f, "{{value: {:.2}, count: {}}}", x, w)
         }
     }
 }

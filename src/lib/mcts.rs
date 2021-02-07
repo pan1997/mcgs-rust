@@ -225,13 +225,14 @@ mod tests {
     use super::*;
     use crate::lib::decision_process::graph_dp::tests::{problem1, problem2, DSim};
     use crate::lib::decision_process::DefaultSimulator;
-    use crate::lib::mcts::node_store::{ActionWithStaticPolicy, OnlyAction};
     use crate::lib::mcts::safe_tree::tests::print_tree;
     use crate::lib::mcts::safe_tree::ThreadSafeNodeStore;
     use crate::lib::mcts::tree_policy::{
         PuctTreePolicy, PuctWithDiricheletTreePolicy, RandomTreePolicy, UctTreePolicy,
     };
-    use crate::lib::{NoFilteringAndUniformPolicyForPuct, NoProcessing};
+    use crate::lib::{
+        ActionWithStaticPolicy, NoFilteringAndUniformPolicyForPuct, NoProcessing, OnlyAction,
+    };
 
     #[test]
     fn test_basic() {
