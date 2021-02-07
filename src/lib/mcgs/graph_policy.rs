@@ -6,7 +6,7 @@ use num::ToPrimitive;
 use rand::{thread_rng, Rng};
 use std::ops::Deref;
 
-pub(crate) trait SelectionPolicy<P, G>
+pub trait SelectionPolicy<P, G>
 where
     G: SearchGraph<P::State>,
     P: DecisionProcess,
@@ -15,7 +15,7 @@ where
     fn select(&self, problem: &P, store: &G, node: &G::Node, agent: P::Agent, depth: u32) -> u32;
 }
 
-pub(crate) struct RandomPolicy;
+pub struct RandomPolicy;
 impl<P: DecisionProcess, G: SearchGraph<P::State>> SelectionPolicy<P, G> for RandomPolicy {
     fn select(&self, _: &P, store: &G, node: &G::Node, _: P::Agent, _: u32) -> u32 {
         let k = store.children_count(node);
@@ -42,6 +42,29 @@ where
         // Returns an invalid edge when all edges have been visited
         // TODO: do we need to switch to random for this case?
         edge_count
+    }
+}
+
+pub struct MostVisitedPolicy;
+impl MostVisitedPolicy {
+    pub(crate) fn select<P, G>(&self, _: &P, store: &G, node: &G::Node) -> u32
+    where
+        P: DecisionProcess,
+        G: SearchGraph<P::State>,
+        G::Edge: SelectCountStore,
+    {
+        let edge_count = store.children_count(node);
+        debug_assert!(edge_count > 0);
+        let mut max_count = 0;
+        let mut best_edge = 0;
+        for edge_index in 0..edge_count {
+            let edge = store.get_edge(node, edge_index);
+            if edge.selection_count() > max_count {
+                best_edge = edge_index;
+                max_count = edge.selection_count()
+            }
+        }
+        best_edge
     }
 }
 

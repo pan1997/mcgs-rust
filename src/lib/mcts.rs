@@ -179,7 +179,7 @@ where
         NS::Edge: Edge<f32>,
     {
         let simulation_count = n.total_selection_count() - start_count.or(Some(0)).unwrap();
-        print!("{}kN ", simulation_count);
+        print!("{}kN ", simulation_count / 1000);
         if start_time.is_some() {
             let elapsed = start_time.unwrap().elapsed().as_millis();
             print!(

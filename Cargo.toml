@@ -12,6 +12,7 @@ num = "*"
 atomic_float = "*"
 rand_distr = "*"
 parking_lot = "*"
+text_io = "*"
 
 [dependencies.rand]
 version = "*"

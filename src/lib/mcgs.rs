@@ -1,7 +1,7 @@
-mod expansion_traits;
-mod graph_policy;
-mod safe_tree;
-mod search_graph;
+pub(crate) mod expansion_traits;
+pub(crate) mod graph_policy;
+pub(crate) mod safe_tree;
+pub(crate) mod search_graph;
 
 use graph_policy::*;
 use search_graph::*;
@@ -9,8 +9,9 @@ use search_graph::*;
 use crate::lib::decision_process::{DecisionProcess, Distance, Outcome, Simulator};
 use crate::lib::mcgs::expansion_traits::{BlockExpansionTrait, ExpansionTrait};
 use std::cmp::{max, min};
+use std::fmt::Display;
 use std::ops::Deref;
-
+use std::time::Instant;
 
 pub struct ExpansionResult<O, EI> {
     outcome: O,
@@ -31,7 +32,7 @@ pub struct ExpansionResult<O, EI> {
 /// implementation and avoids expensive safeguards to enable safe sharing of the search tree
 /// among multiple workers.
 
-struct Search<P, S, R, G, X> {
+pub struct Search<P, S, R, G, X> {
     problem: P,
     search_graph: G,
     selection_policy: S,
@@ -55,7 +56,7 @@ where
     G::Edge: SelectCountStore + OutcomeStore<P::Outcome> + Deref<Target = P::Action>,
     <P::Outcome as Outcome<P::Agent>>::RewardType: Distance,
 {
-    fn new(
+    pub(crate) fn new(
         problem: P,
         search_graph: G,
         selection_policy: S,
@@ -71,6 +72,14 @@ where
             q_shorting_bound,
             maximum_trajectory_weight,
         }
+    }
+
+    pub(crate) fn problem(&self) -> &P {
+        &self.problem
+    }
+
+    pub(crate) fn search_graph(&self) -> &G {
+        &self.search_graph
     }
 
     /// Either creates a new node and returns it for expansion, or returns a
@@ -171,7 +180,7 @@ where
         }
     }
 
-    fn one_iteration<I>(&self, root: &G::Node, state: &mut P::State)
+    pub(crate) fn one_iteration<I>(&self, root: &G::Node, state: &mut P::State)
     where
         X: ExpansionTrait<P, I>,
         G::Edge: From<I>,
@@ -229,10 +238,70 @@ where
         for (expansion_result, trajectory_index) in expansion_results.into_iter().zip(inverse_map) {
             let (trajectory, node, _) = &mut trajectories_plus[trajectory_index];
             if !expansion_result.prune {
-                self.search_graph.create_children(node, expansion_result.edges);
+                self.search_graph
+                    .create_children(node, expansion_result.edges);
             }
-            self.propagate(trajectory, node, expansion_result.outcome, 1, expansion_result.prune);
+            self.propagate(
+                trajectory,
+                node,
+                expansion_result.outcome,
+                1,
+                expansion_result.prune,
+            );
         }
+    }
+
+    pub(crate) fn print_pv<'a>(
+        &self,
+        mut root: &'a G::Node,
+        start_time: Option<Instant>,
+        start_count: Option<u32>,
+        trajectory: &mut Vec<(&'a G::Node, &'a G::Edge)>,
+        filter: u32,
+    ) where
+        P::Action: Display,
+        P::Outcome: Display,
+    {
+        let selection_count = (root.selection_count() - start_count.or(Some(0)).unwrap());
+        print!("{}kN ", selection_count / 1000);
+        if start_time.is_some() {
+            let elapsed = start_time.unwrap().elapsed().as_millis();
+            print!(
+                "in {}ms @{}kNps ",
+                elapsed,
+                selection_count as u128 / (elapsed + 1)
+            );
+        }
+        let mut filtered_len = 0;
+        let mut end = false;
+        while !self.search_graph.is_leaf(root) {
+            let best_edge_index = MostVisitedPolicy.select(&self.problem, &self.search_graph, root);
+            let edge = self.search_graph.get_edge(root, best_edge_index);
+            let action: &P::Action = &edge;
+            if !end && root.selection_count() > filter {
+                filtered_len += 1;
+                print!(
+                    "{{{}, {}k({})%, {:.2}, ",
+                    action,
+                    edge.selection_count() / 1000,
+                    edge.selection_count() * 100 / (root.selection_count() + 1), // avoid nast divide by zero
+                    root.expected_outcome()
+                );
+                if root.is_solved() {
+                    print!("S}}-> ");
+                } else {
+                    print!("}}-> ");
+                }
+            } else {
+                end = true;
+            }
+            trajectory.push((root, edge));
+            if self.search_graph.is_dangling(edge) {
+                break;
+            }
+            root = self.search_graph.get_target(edge);
+        }
+        println!("| depth {}/{}", filtered_len, trajectory.len());
     }
 }
 
@@ -241,7 +310,7 @@ impl<O: Clone, EI: Clone> Clone for ExpansionResult<O, EI> {
         ExpansionResult {
             outcome: self.outcome.clone(),
             prune: self.prune,
-            edges: self.edges.clone()
+            edges: self.edges.clone(),
         }
     }
 }
@@ -251,7 +320,9 @@ mod tests {
     use super::*;
     use crate::lib::decision_process::graph_dp::tests::{problem1, problem2, DSim};
     use crate::lib::decision_process::{DefaultSimulator, RandomSimulator};
-    use crate::lib::mcgs::expansion_traits::{BasicExpansion, BasicExpansionWithUniformPrior, BlockExpansionFromBasic};
+    use crate::lib::mcgs::expansion_traits::{
+        BasicExpansion, BasicExpansionWithUniformPrior, BlockExpansionFromBasic,
+    };
     use crate::lib::mcgs::safe_tree::tests::print_graph;
     use crate::lib::mcgs::safe_tree::SafeTree;
     use crate::lib::mcts::node_store::ActionWithStaticPolicy;

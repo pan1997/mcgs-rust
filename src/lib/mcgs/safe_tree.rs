@@ -120,7 +120,7 @@ impl<S, O, D> SearchGraph<S> for SafeTree<D, O> {
     }
 
     fn drop_node(&self, n: &mut Self::Node) {
-        // TODO: handle children
+        // Also drops children correctly
         unsafe {
             Box::from_raw(n);
         }
@@ -156,7 +156,7 @@ impl<S, O, D> SearchGraph<S> for SafeTree<D, O> {
         unsafe { (*e.node.get()).as_ref().unwrap() }
     }
 
-    fn create_target<'a>(&self, e: &'a Self::Edge, s: &S) -> &'a Self::Node {
+    fn create_target<'a>(&self, e: &'a Self::Edge, _: &S) -> &'a Self::Node {
         if !e.node_created.swap(true, Ordering::SeqCst) {
             unsafe {
                 (&mut *e.node.get()).replace(Node::new());

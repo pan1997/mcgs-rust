@@ -19,7 +19,7 @@ pub struct Board {
 
 // The enclosed value is the square column
 #[derive(Clone, Copy)]
-pub struct Move(u8);
+pub struct Move(pub u8);
 
 pub(crate) struct C4 {
     width: usize,
@@ -27,15 +27,16 @@ pub(crate) struct C4 {
     size: usize, // = width * height
 }
 // 0 is draw, otherwise it stores the winner
-pub struct C4Outcome(Player);
+//pub struct C4Outcome(Player);
 
 impl DecisionProcess for C4 {
     type Agent = Player;
     type Action = Move;
     type UndoAction = Move;
     type State = Board;
-    // 0 means win for black, and +1 means win for white
-    type Outcome = C4Outcome;
+
+    // winning percentage for white, normalised between [-1, 1]
+    type Outcome = f32;
 
     fn start_state(&self) -> Self::State {
         Board {
@@ -118,9 +119,12 @@ impl DecisionProcess for C4 {
                 ll, rr, dd, lu, ld, ru, rd
             );*/
             if dd >= 3 || ll + rr >= 3 || lu + rd >= 3 || ld + ru >= 3 {
-                Some(C4Outcome(player_who_just_moved))
+                Some(match player_who_just_moved {
+                    B => -1.0,
+                    _ => 1.0,
+                })
             } else if s.total_piece_count == self.size {
-                Some(C4Outcome(0))
+                Some(0.0)
             } else {
                 None
             }
@@ -193,23 +197,14 @@ fn opponent(p: Player) -> Player {
     !p
 }
 
-impl Outcome<Player> for C4Outcome {
+impl Outcome<Player> for f32 {
     type RewardType = f32;
 
     fn reward_for_agent(&self, a: Player) -> Self::RewardType {
-        if self.0 == 0 {
-            0.0
-        } else if self.0 == a {
-            1.0
-        } else {
-            -1.0
+        match a {
+            B => -*self,
+            _ => *self,
         }
-    }
-}
-
-impl Default for C4Outcome {
-    fn default() -> Self {
-        C4Outcome(0)
     }
 }
 
@@ -232,12 +227,12 @@ mod tests {
     fn basic() {
         assert_eq!(opponent(B), W);
 
-        assert_eq!(C4Outcome(0).reward_for_agent(W), 0.5);
-        assert_eq!(C4Outcome(0).reward_for_agent(B), 0.5);
-        assert_eq!(C4Outcome(W).reward_for_agent(W), 1.0);
-        assert_eq!(C4Outcome(W).reward_for_agent(B), 0.0);
-        assert_eq!(C4Outcome(B).reward_for_agent(W), 0.0);
-        assert_eq!(C4Outcome(B).reward_for_agent(B), 1.0);
+        assert_eq!(0.0.reward_for_agent(W), 0.0);
+        assert_eq!(0.0.reward_for_agent(B), 0.0);
+        assert_eq!(1.0.reward_for_agent(W), 1.0);
+        assert_eq!(1.0.reward_for_agent(B), -1.0);
+        assert_eq!(-1.0.reward_for_agent(W), -1.0);
+        assert_eq!(-1.0.reward_for_agent(B), 1.0);
     }
 
     #[test]

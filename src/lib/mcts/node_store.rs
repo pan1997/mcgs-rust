@@ -103,7 +103,7 @@ impl<A> Deref for OnlyAction<A> {
 impl<A: Clone> Clone for OnlyAction<A> {
     fn clone(&self) -> Self {
         OnlyAction {
-            action: self.action.clone()
+            action: self.action.clone(),
         }
     }
 }

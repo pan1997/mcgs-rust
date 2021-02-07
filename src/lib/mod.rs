@@ -2,7 +2,7 @@ use crate::lib::decision_process::DecisionProcess;
 use crate::lib::mcts::node_store::{ActionWithStaticPolicy, OnlyAction};
 
 pub(crate) mod decision_process;
-mod mcgs;
+pub(crate) mod mcgs;
 pub(crate) mod mcts;
 
 pub trait MoveProcessor<D: DecisionProcess, E> {
