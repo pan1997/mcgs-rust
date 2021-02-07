@@ -41,14 +41,14 @@ fn main() {
                 let node = s.search_graph().create_node(&state);
                 let start_instant = Instant::now();
                 for _ in 0..2000000 {
-                    s.one_iteration(node, &mut state);
+                    s.one_iteration(&node, &mut state);
                 }
                 let mut trajectory = vec![];
-                s.print_pv(node, Some(start_instant), None, &mut trajectory, 256);
+                s.print_pv(&node, Some(start_instant), None, &mut trajectory, 256);
                 let best_edge = SearchGraph::<()>::get_edge(
                     s.search_graph(),
-                    node,
-                    MostVisitedPolicy.select(s.problem(), s.search_graph(), node),
+                    &node,
+                    MostVisitedPolicy.select(s.problem(), s.search_graph(), &node),
                 );
                 let best_move: &Move = best_edge;
                 let score: f32 = node.expected_outcome();

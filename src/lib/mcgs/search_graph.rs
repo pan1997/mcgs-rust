@@ -25,8 +25,7 @@ pub trait SearchGraph<S> {
     type Node;
     type Edge;
 
-    fn create_node<'a>(&self, s: &S) -> &'a mut Self::Node;
-    fn drop_node(&self, n: &mut Self::Node);
+    fn create_node(&self, s: &S) -> Box<Self::Node>;
 
     fn is_leaf(&self, n: &Self::Node) -> bool;
     fn children_count(&self, n: &Self::Node) -> u32;

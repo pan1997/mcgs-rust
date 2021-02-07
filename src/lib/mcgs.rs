@@ -341,12 +341,11 @@ mod tests {
 
         let state = &mut s.problem.start_state();
         let n = s.search_graph.create_node(state);
-        print_graph(&s.search_graph, n, 0);
+        print_graph(&s.search_graph, &n, 0);
         for _ in 0..10 {
-            s.one_iteration(n, state);
-            print_graph(&s.search_graph, n, 0);
+            s.one_iteration(&n, state);
+            print_graph(&s.search_graph, &n, 0);
         }
-        SearchGraph::<NodeIndex>::drop_node(&s.search_graph, n);
     }
 
     #[test]
@@ -362,12 +361,11 @@ mod tests {
 
         let state = &mut s.problem.start_state();
         let n = s.search_graph.create_node(state);
-        print_graph(&s.search_graph, n, 0);
+        print_graph(&s.search_graph, &n, 0);
         for _ in 0..100 {
-            s.one_iteration(n, state);
-            print_graph(&s.search_graph, n, 0);
+            s.one_iteration(&n, state);
+            print_graph(&s.search_graph, &n, 0);
         }
-        SearchGraph::<NodeIndex>::drop_node(&s.search_graph, n);
     }
 
     #[test]
@@ -383,12 +381,12 @@ mod tests {
 
         let state = &mut s.problem.start_state();
         let n = s.search_graph.create_node(state);
-        print_graph(&s.search_graph, n, 0);
+        print_graph(&s.search_graph, &n, 0);
         for _ in 0..20 {
-            s.one_block(n, state, 5);
-            print_graph(&s.search_graph, n, 0);
+            s.one_block(&n, state, 5);
+            print_graph(&s.search_graph, &n, 0);
         }
-        SearchGraph::<NodeIndex>::drop_node(&s.search_graph, n);
+        let n = s.search_graph.create_node(state);
     }
 
     #[test]
@@ -404,12 +402,11 @@ mod tests {
 
         let state = &mut s.problem.start_state();
         let n = s.search_graph.create_node(state);
-        print_graph(&s.search_graph, n, 0);
-        for _ in 0..250 {
-            s.one_iteration(n, state);
-            print_graph(&s.search_graph, n, 0);
+        print_graph(&s.search_graph, &n, 0);
+        for _ in 0..100 {
+            s.one_iteration(&n, state);
+            print_graph(&s.search_graph, &n, 0);
         }
-        SearchGraph::<NodeIndex>::drop_node(&s.search_graph, n);
     }
 
     #[test]
@@ -425,11 +422,10 @@ mod tests {
 
         let state = &mut s.problem.start_state();
         let n = s.search_graph.create_node(state);
-        print_graph(&s.search_graph, n, 0);
+        print_graph(&s.search_graph, &n, 0);
         for _ in 0..100 {
-            s.one_iteration(n, state);
-            print_graph(&s.search_graph, n, 0);
+            s.one_iteration(&n, state);
+            print_graph(&s.search_graph, &n, 0);
         }
-        SearchGraph::<NodeIndex>::drop_node(&s.search_graph, n);
     }
 }

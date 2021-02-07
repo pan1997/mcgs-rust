@@ -115,15 +115,8 @@ impl<S, O, D> SearchGraph<S> for SafeTree<D, O> {
     type Node = Node<D>;
     type Edge = Edge<D>;
 
-    fn create_node<'a>(&self, _: &S) -> &'a mut Self::Node {
-        unsafe { &mut *Box::into_raw(Box::new(Node::new())) }
-    }
-
-    fn drop_node(&self, n: &mut Self::Node) {
-        // Also drops children correctly
-        unsafe {
-            Box::from_raw(n);
-        }
+    fn create_node(&self, _: &S) -> Box<Self::Node> {
+        Box::new(Node::new())
     }
 
     fn is_leaf(&self, n: &Self::Node) -> bool {
