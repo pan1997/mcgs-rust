@@ -143,3 +143,19 @@ where
         result
     }
 }
+
+impl<P: DecisionProcess, X, I> ExpansionTrait<P, I>
+    for BlockExpansionFromBasic<X, ExpansionResult<P::Outcome, X::OutputIter>>
+where
+    X: ExpansionTrait<P, I>,
+{
+    type OutputIter = X::OutputIter;
+
+    fn apply(
+        &self,
+        problem: &P,
+        state: &mut <P as DecisionProcess>::State,
+    ) -> ExpansionResult<<P as DecisionProcess>::Outcome, Self::OutputIter> {
+        self.basic.apply(problem, state)
+    }
+}

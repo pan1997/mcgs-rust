@@ -1,8 +1,10 @@
 mod lib;
 use crate::lib::decision_process::c4::{Move, C4};
-use crate::lib::decision_process::{DecisionProcess, DefaultSimulator};
 use crate::lib::decision_process::RandomSimulator;
-use crate::lib::mcgs::expansion_traits::{BasicExpansion, BasicExpansionWithUniformPrior};
+use crate::lib::decision_process::{DecisionProcess, DefaultSimulator};
+use crate::lib::mcgs::expansion_traits::{
+    BasicExpansion, BasicExpansionWithUniformPrior, BlockExpansionFromBasic,
+};
 use crate::lib::mcgs::graph_policy::{MostVisitedPolicy, PuctPolicy, UctPolicy};
 use crate::lib::mcgs::safe_tree::SafeTree;
 use crate::lib::mcgs::search_graph::{OutcomeStore, SearchGraph, SelectCountStore};
@@ -26,7 +28,7 @@ fn main() {
         C4::new(9, 7),
         SafeTree::<OnlyAction<_>, Vec<f32>>::new(),
         UctPolicy::new(2.4),
-        BasicExpansion::new(DefaultSimulator),
+        BlockExpansionFromBasic::new(BasicExpansion::new(DefaultSimulator)),
         0.01,
         1,
     );
@@ -49,12 +51,8 @@ fn main() {
                 println!("{}", state);
                 let time_limit: u128 = read!();
                 let node = s.search_graph().create_node(&state);
-                let start_instant = Instant::now();
-                for _ in 0..5000000 {
-                    s.one_iteration(&node, &mut state);
-                }
-                let mut trajectory = vec![];
-                s.print_pv(&node, Some(start_instant), None, &mut trajectory, 256);
+                //let elapsed = s.start_block(&node, &mut state, None, Some(time_limit), Some(97));
+                let elapsed = s.start(&node, &mut state, None, Some(time_limit), Some(97));
                 let best_edge = SearchGraph::<()>::get_edge(
                     s.search_graph(),
                     &node,

@@ -37,7 +37,8 @@ impl Samples {
 
                     Some(((result_high as u64) << 32) + (result_low as u64))
                 }
-            }).unwrap();
+            })
+            .unwrap();
     }
 
     pub(crate) fn count(&self) -> u32 {
@@ -61,7 +62,8 @@ impl Samples {
         self.data
             .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |u| {
                 Some(((u >> 32) << 32) + (u32::MAX as u64))
-            }).unwrap();
+            })
+            .unwrap();
     }
 }
 

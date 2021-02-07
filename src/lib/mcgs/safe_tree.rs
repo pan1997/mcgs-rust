@@ -25,6 +25,8 @@ pub struct Edge<I> {
     node: UnsafeCell<Option<Node<I>>>,
 }
 
+unsafe impl<I> Send for Node<I> {}
+
 impl<I> OutcomeStore<f32> for Node<I> {
     fn expected_outcome(&self) -> f32 {
         self.samples.expected_sample()

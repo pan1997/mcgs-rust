@@ -12,7 +12,9 @@ use crate::lib::mcgs::expansion_traits::{BlockExpansionTrait, ExpansionTrait};
 use std::cmp::min;
 use std::fmt::Display;
 use std::ops::Deref;
-use std::time::Instant;
+use std::sync::atomic::AtomicU32;
+use std::thread::sleep;
+use std::time::{Duration, Instant};
 
 pub struct ExpansionResult<O, EI> {
     outcome: O,
@@ -259,6 +261,7 @@ where
         node_limit: Option<u32>,
         time_limit: Option<u128>,
         confidence: Option<u32>,
+        minimum_count: u32,
     ) -> bool {
         if time_limit.is_some() {
             let elapsed = start_time.elapsed().as_millis();
@@ -274,31 +277,93 @@ where
         }
         if confidence.is_some() {
             let node_count = root.selection_count();
-            let limit = ((node_count as u64 * confidence.unwrap() as u64) / 100) as u32;
-            let best_edge_count = self
-                .search_graph
-                .get_edge(
-                    root,
-                    MostVisitedPolicy.select(&self.problem, &self.search_graph, root),
-                )
-                .selection_count();
-            if best_edge_count > limit {
-                return true;
+            if node_count > minimum_count {
+                let limit = ((node_count as u64 * confidence.unwrap() as u64) / 100) as u32;
+                let best_edge_count = self
+                    .search_graph
+                    .get_edge(
+                        root,
+                        MostVisitedPolicy.select(&self.problem, &self.search_graph, root),
+                    )
+                    .selection_count();
+                if best_edge_count > limit {
+                    return true;
+                }
             }
         }
         false
     }
 
-    fn start(
+    pub(crate) fn start_block<I>(
         &self,
         root: &G::Node,
         state: &mut P::State,
         node_limit: Option<u32>,
         time_limit: Option<u128>,
         confidence: Option<u32>, // out of 100
-        worker_count: u32
-    ) {
+    ) -> u128
+    where
+        X: BlockExpansionTrait<P, I> + ExpansionTrait<P, I>,
+        G::Edge: From<I>,
+        P::Action: Display,
+        P::Outcome: Display,
+    {
+        let start_time = Instant::now();
+        let start_count = root.selection_count();
+        let mut next_pv = 1;
+        let mut worker = || {
+            while !self.end_search(start_time, root, node_limit, time_limit, confidence, 32) {
+                if root.selection_count() < 256 {
+                    for _ in 0..256 {
+                        self.one_iteration(root, state);
+                    }
+                } else {
+                    self.one_block(root, state, 32);
+                }
+                let index = start_time.elapsed().as_millis() / 500;
+                if index >= next_pv {
+                    next_pv += 1;
+                    let mut v = vec![];
+                    self.print_pv(root, Some(start_time), Some(start_count), &mut v, 256);
+                }
+            }
+        };
+        worker();
+        start_time.elapsed().as_millis()
+    }
 
+    pub(crate) fn start<I>(
+        &self,
+        root: &G::Node,
+        state: &mut P::State,
+        node_limit: Option<u32>,
+        time_limit: Option<u128>,
+        confidence: Option<u32>, // out of 100
+    ) -> u128
+    where
+        X: ExpansionTrait<P, I>,
+        G::Edge: From<I>,
+        P::Action: Display,
+        P::Outcome: Display,
+    {
+        let start_time = Instant::now();
+        let start_count = root.selection_count();
+        let mut next_pv = 1;
+        let mut worker = || {
+            while !self.end_search(start_time, root, node_limit, time_limit, confidence, 32) {
+                for _ in 0..256 {
+                    self.one_iteration(root, state);
+                }
+                let index = start_time.elapsed().as_millis() / 500;
+                if index >= next_pv {
+                    next_pv += 1;
+                    let mut v = vec![];
+                    self.print_pv(root, Some(start_time), Some(start_count), &mut v, 256);
+                }
+            }
+        };
+        worker();
+        start_time.elapsed().as_millis()
     }
 
     pub(crate) fn print_pv<'a>(
