@@ -7,6 +7,7 @@ type Player = i8;
 const B: Player = i8::MIN;
 const W: Player = i8::MAX;
 
+#[derive(Clone)]
 pub struct Board {
     white_pieces: Vec<bool>,
     black_pieces: Vec<bool>,

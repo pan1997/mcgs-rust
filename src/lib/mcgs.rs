@@ -112,11 +112,11 @@ where
             undo_stack.push(self.problem.transition(state, &edge));
 
             // If this edge is dangling, we create a new node and then return it
-            if self.search_graph.is_dangling(edge) {
+            /*if self.search_graph.is_dangling(edge) {
                 let next_node = self.search_graph.create_target(edge, state);
                 return SelectionResult::Expand(next_node);
-            }
-            let next_node = self.search_graph.get_target(edge);
+            }*/
+            let next_node = self.search_graph.get_target_node(edge);
 
             // Check if this is a transposition (next_node has extra samples)
             let n_count = next_node.sample_count();
@@ -142,8 +142,7 @@ where
 
             node = next_node;
         }
-
-        println!("hey.....");
+        //println!("hey.....");
         SelectionResult::Expand(node)
     }
 
@@ -366,6 +365,52 @@ where
         start_time.elapsed().as_millis()
     }
 
+    pub(crate) fn start_parallel<I>(
+        &self,
+        root: &G::Node,
+        state: &P::State,
+        node_limit: Option<u32>,
+        time_limit: Option<u128>,
+        confidence: Option<u32>, // out of 100
+        worker_count: u32,
+    ) -> u128
+    where
+        P::State: Clone + Send,
+        X: ExpansionTrait<P, I>,
+        G::Edge: From<I>,
+        P::Action: Display,
+        P::Outcome: Display,
+        <<P::Outcome as Outcome<P::Agent>>::RewardType as Distance>::NormType: Sync,
+        G::Node: Sync,
+        P: Sync,
+        G: Sync,
+        S: Sync,
+        X: Sync,
+    {
+        let start_time = Instant::now();
+        let start_count = root.selection_count();
+        crossbeam::scope(|scope| {
+            for _ in 0..worker_count {
+                let mut local_state = state.clone();
+                scope.spawn(move |_| {
+                    while !self.end_search(start_time, root, node_limit, time_limit, confidence, 32)
+                    {
+                        for _ in 0..256 {
+                            self.one_iteration(root, &mut local_state);
+                        }
+                    }
+                });
+            }
+            while !self.end_search(start_time, root, node_limit, time_limit, confidence, 32) {
+                sleep(Duration::from_millis(500));
+                let mut v = vec![];
+                self.print_pv(root, Some(start_time), Some(start_count), &mut v, 256);
+            }
+        })
+        .unwrap();
+        start_time.elapsed().as_millis()
+    }
+
     pub(crate) fn print_pv<'a>(
         &self,
         mut root: &'a G::Node,
@@ -387,14 +432,11 @@ where
                 selection_count as u128 / (elapsed + 1)
             );
         }
-        let mut filtered_len = 0;
-        let mut end = false;
         while !self.search_graph.is_leaf(root) {
             let best_edge_index = MostVisitedPolicy.select(&self.problem, &self.search_graph, root);
             let edge = self.search_graph.get_edge(root, best_edge_index);
             let action: &P::Action = &edge;
-            if !end && root.selection_count() > filter {
-                filtered_len += 1;
+            if root.selection_count() > filter {
                 print!(
                     "{{{}, {}k({})%, {:.2}, ",
                     action,
@@ -408,15 +450,12 @@ where
                     print!("}}-> ");
                 }
             } else {
-                end = true;
+                break
             }
             trajectory.push((root, edge));
-            if self.search_graph.is_dangling(edge) {
-                break;
-            }
-            root = self.search_graph.get_target(edge);
+            root = self.search_graph.get_target_node(edge);
         }
-        println!("| depth {}/{}", filtered_len, trajectory.len());
+        println!("| depth {}", trajectory.len());
     }
 }
 
@@ -439,7 +478,9 @@ mod tests {
     };
     use crate::lib::mcgs::safe_tree::tests::print_graph;
     use crate::lib::mcgs::safe_tree::SafeTree;
-    use crate::lib::ActionWithStaticPolicy;
+    use crate::lib::{ActionWithStaticPolicy, OnlyAction};
+    use crate::lib::decision_process::c4::C4;
+    use crate::lib::decision_process::DefaultSimulator;
 
     #[test]
     fn random() {
@@ -454,10 +495,10 @@ mod tests {
 
         let state = &mut s.problem.start_state();
         let n = s.search_graph.create_node(state);
-        print_graph(&s.search_graph, &n, 0);
+        print_graph(&s.search_graph, &n, 0, true);
         for _ in 0..10 {
             s.one_iteration(&n, state);
-            print_graph(&s.search_graph, &n, 0);
+            print_graph(&s.search_graph, &n, 0, true);
         }
     }
 
@@ -474,10 +515,10 @@ mod tests {
 
         let state = &mut s.problem.start_state();
         let n = s.search_graph.create_node(state);
-        print_graph(&s.search_graph, &n, 0);
+        print_graph(&s.search_graph, &n, 0, true);
         for _ in 0..100 {
             s.one_iteration(&n, state);
-            print_graph(&s.search_graph, &n, 0);
+            print_graph(&s.search_graph, &n, 0, true);
         }
     }
 
@@ -494,10 +535,10 @@ mod tests {
 
         let state = &mut s.problem.start_state();
         let n = s.search_graph.create_node(state);
-        print_graph(&s.search_graph, &n, 0);
+        print_graph(&s.search_graph, &n, 0, true);
         for _ in 0..20 {
             s.one_block(&n, state, 5);
-            print_graph(&s.search_graph, &n, 0);
+            print_graph(&s.search_graph, &n, 0, true);
         }
         s.search_graph.create_node(state);
     }
@@ -515,10 +556,10 @@ mod tests {
 
         let state = &mut s.problem.start_state();
         let n = s.search_graph.create_node(state);
-        print_graph(&s.search_graph, &n, 0);
+        print_graph(&s.search_graph, &n, 0, true);
         for _ in 0..100 {
             s.one_iteration(&n, state);
-            print_graph(&s.search_graph, &n, 0);
+            print_graph(&s.search_graph, &n, 0, true);
         }
     }
 
@@ -535,10 +576,29 @@ mod tests {
 
         let state = &mut s.problem.start_state();
         let n = s.search_graph.create_node(state);
-        print_graph(&s.search_graph, &n, 0);
+        print_graph(&s.search_graph, &n, 0,true);
         for _ in 0..100 {
             s.one_iteration(&n, state);
-            print_graph(&s.search_graph, &n, 0);
+            print_graph(&s.search_graph, &n, 0,true);
         }
+    }
+
+    #[test]
+    fn c4_test() {
+        let s = Search::new(
+            C4::new(9, 7),
+            SafeTree::<OnlyAction<_>, Vec<f32>>::new(),
+            UctPolicy::new(2.4),
+            BasicExpansion::new(DefaultSimulator),
+            0.01,
+            1,
+        );
+        let state = &mut s.problem.start_state();
+        let n = s.search_graph.create_node(state);
+        print_graph(&s.search_graph, &n, 0, true);
+        for _ in 0..1000 {
+            s.one_iteration(&n, state);
+        }
+        print_graph(&s.search_graph, &n, 0, false);
     }
 }

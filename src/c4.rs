@@ -52,7 +52,8 @@ fn main() {
                 let time_limit: u128 = read!();
                 let node = s.search_graph().create_node(&state);
                 //let elapsed = s.start_block(&node, &mut state, None, Some(time_limit), Some(97));
-                let elapsed = s.start(&node, &mut state, None, Some(time_limit), Some(97));
+                //let elapsed = s.start(&node, &mut state, None, Some(time_limit), Some(97));
+                let elapsed = s.start_parallel(&node, &state, None, Some(time_limit), Some(97), 8);
                 let best_edge = SearchGraph::<()>::get_edge(
                     s.search_graph(),
                     &node,

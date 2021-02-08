@@ -31,8 +31,5 @@ pub trait SearchGraph<S> {
     fn create_children<I: Into<Self::Edge>, L: Iterator<Item = I>>(&self, n: &Self::Node, l: L);
 
     fn get_edge<'a>(&self, n: &'a Self::Node, ix: u32) -> &'a Self::Edge;
-    fn get_target<'a>(&self, e: &'a Self::Edge) -> &'a Self::Node;
-
-    fn create_target<'a>(&self, e: &'a Self::Edge, s: &S) -> &'a Self::Node;
-    fn is_dangling(&self, e: &Self::Edge) -> bool;
+    fn get_target_node<'a>(&self, e: &'a Self::Edge) -> &'a Self::Node;
 }

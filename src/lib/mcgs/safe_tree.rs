@@ -7,13 +7,15 @@ use std::cell::UnsafeCell;
 use std::marker::PhantomData;
 use std::ops::Deref;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use parking_lot::RwLock;
 
 pub struct Node<I> {
     selection_count: AtomicU32,
     samples: Samples,
 
-    has_been_expanded: AtomicBool,
-    edges: UnsafeCell<Vec<Edge<I>>>,
+    //has_been_expanded: AtomicBool,
+
+    edges: RwLock<Vec<Edge<I>>>,
 }
 
 pub struct Edge<I> {
@@ -21,11 +23,11 @@ pub struct Edge<I> {
     selection_count: AtomicU32,
     samples: Samples,
 
-    node_created: AtomicBool,
-    node: UnsafeCell<Option<Node<I>>>,
+    node: Node<I>,
+    //node: Mutex<Option<Node<I>>>
 }
 
-unsafe impl<I> Send for Node<I> {}
+unsafe impl<I> Sync for Node<I> {}
 
 impl<I> OutcomeStore<f32> for Node<I> {
     fn expected_outcome(&self) -> f32 {
@@ -116,46 +118,48 @@ impl<S, O, D> SearchGraph<S> for SafeTree<D, O> {
     fn is_leaf(&self, n: &Self::Node) -> bool {
         // Not checking for has_been_expanded, as this check is valid even for nodes that have
         // not been expanded
-        unsafe { &*n.edges.get() }.is_empty()
+        //unsafe { &*n.edges.get() }.is_empty()
+        n.edges.read().is_empty()
     }
 
     fn children_count(&self, n: &Self::Node) -> u32 {
-        unsafe { &*n.edges.get() }.len() as u32
+        n.edges.read().len() as u32
     }
 
     fn create_children<I: Into<Self::Edge>, L: Iterator<Item = I>>(&self, n: &Self::Node, l: L) {
+        let mut children = n.edges.write();
+        for e in l {
+            children.push(e.into());
+        }
+        /*
         if !n.has_been_expanded.swap(true, Ordering::SeqCst) {
             // This is the first time we are expanding this node
             let children = unsafe { &mut *n.edges.get() };
             for e in l {
                 children.push(e.into());
             }
-        }
+        }*/
     }
 
     fn get_edge<'a>(&self, n: &'a Self::Node, ix: u32) -> &'a Self::Edge {
-        debug_assert!(n.has_been_expanded.load(Ordering::SeqCst));
-        unsafe { &(&*n.edges.get())[ix as usize] }
-    }
-
-    fn get_target<'a>(&self, e: &'a Self::Edge) -> &'a Self::Node {
-        debug_assert!(e.node_created.load(Ordering::SeqCst));
-        unsafe { (*e.node.get()).as_ref().unwrap() }
-    }
-
-    fn create_target<'a>(&self, e: &'a Self::Edge, _: &S) -> &'a Self::Node {
-        if !e.node_created.swap(true, Ordering::SeqCst) {
-            unsafe {
-                (&mut *e.node.get()).replace(Node::new());
-                (*e.node.get()).as_ref().unwrap()
-            }
-        } else {
-            panic!("Recreating a target node.")
+        //debug_assert!(n.has_been_expanded.load(Ordering::SeqCst));
+        //assert!(n.has_been_expanded.load(Ordering::SeqCst));
+        //unsafe { &(&*n.edges.get())[ix as usize] }
+        unsafe {
+            let r = n.edges.read();
+            let child = r.get_unchecked(ix as usize);
+            // ( ⚆ _ ⚆ )
+            // borrow even when the lock is released
+            std::mem::transmute(child)
         }
     }
 
-    fn is_dangling(&self, e: &Self::Edge) -> bool {
-        !e.node_created.load(Ordering::SeqCst)
+
+    fn get_target_node<'a>(&self, e: &'a Self::Edge) -> &'a Self::Node {
+        //debug_assert!(e.node_created.load(Ordering::SeqCst));
+        //assert!(e.node_created.load(Ordering::SeqCst));
+        //unsafe { (*e.node.get()).as_ref().unwrap() }
+        &e.node
     }
 }
 
@@ -164,8 +168,7 @@ impl<I> Node<I> {
         Node {
             selection_count: AtomicU32::new(0),
             samples: Samples::new(),
-            has_been_expanded: AtomicBool::new(false),
-            edges: Default::default(),
+            edges: RwLock::new(vec![]),
         }
     }
 }
@@ -244,8 +247,9 @@ impl<I> From<I> for Edge<I> {
             data,
             selection_count: AtomicU32::new(0),
             samples: Samples::new(),
-            node_created: AtomicBool::new(false),
-            node: UnsafeCell::new(None),
+            //node_created: AtomicBool::new(false),
+            //node: Mutex::new(None),
+            node: Node::new()
         }
     }
 }
@@ -254,6 +258,7 @@ impl<I> From<I> for Edge<I> {
 pub(crate) mod tests {
     use super::*;
     use std::fmt::Display;
+    use crossbeam::atomic::AtomicCell;
 
     #[test]
     fn t1() {
@@ -270,28 +275,32 @@ pub(crate) mod tests {
         }
         println!("{}", x);
     }
-    pub fn print_graph<O, D: Display>(ns: &SafeTree<D, O>, n: &Node<D>, offset: u32) {
+
+    pub fn print_graph<O, D: Display>(ns: &SafeTree<D, O>, n: &Node<D>, offset: u32, full: bool) {
         println!(
             "node: {{s_count: {}, score: {}}}",
             n.selection_count.load(Ordering::SeqCst),
             n.samples,
         );
-        for e in 0..SearchGraph::<()>::children_count(ns, n) {
-            for _ in 0..offset {
-                print!("  ");
-            }
-            print!("|-");
-            let edge = SearchGraph::<()>::get_edge(ns, n, e);
-            print!(
-                "-> {{data: {}, s_count: {}, score: {}}} ",
-                edge.data,
-                edge.selection_count.load(Ordering::SeqCst),
-                edge.samples
-            );
-            if SearchGraph::<()>::is_dangling(ns, edge) {
-                println!("-> !");
-            } else {
-                print_graph(ns, SearchGraph::<()>::get_target(ns, edge), offset + 1);
+        if n.selection_count.load(Ordering::SeqCst) >= 0 {
+            for e in 0..SearchGraph::<()>::children_count(ns, n) {
+                for _ in 0..offset {
+                    print!("  ");
+                }
+                print!("|-");
+                let edge = SearchGraph::<()>::get_edge(ns, n, e);
+                print!(
+                    "-> {{data: {}, s_count: {}, score: {}}} ",
+                    edge.data,
+                    edge.selection_count.load(Ordering::SeqCst),
+                    edge.samples
+                );
+                if !full {
+                    println!("-> !");
+                } else {
+                    print_graph(ns, SearchGraph::<()>::get_target_node(ns, edge), offset + 1,
+                                full);
+                }
             }
         }
     }

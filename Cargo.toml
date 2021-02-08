@@ -13,6 +13,7 @@ atomic_float = "*"
 rand_distr = "*"
 parking_lot = "*"
 text_io = "*"
+crossbeam = "*"
 
 [dependencies.rand]
 version = "*"
