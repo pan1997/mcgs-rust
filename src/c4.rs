@@ -14,7 +14,7 @@ use std::time::Instant;
 use text_io::read;
 
 fn main() {
-    /*
+
     let s = Search::new(
         C4::new(9, 7),
         SafeTree::<ActionWithStaticPolicy<_>, Vec<f32>>::new(),
@@ -22,8 +22,8 @@ fn main() {
         BasicExpansionWithUniformPrior::new(RandomSimulator),
         0.01,
         1,
-    );*/
-
+    );
+    /*
     let s = Search::new(
         C4::new(9, 7),
         SafeTree::<OnlyAction<_>, Vec<f32>>::new(),
@@ -31,7 +31,7 @@ fn main() {
         BlockExpansionFromBasic::new(BasicExpansion::new(DefaultSimulator)),
         0.01,
         1,
-    );
+    );*/
 
     let mut state = s.problem().start_state();
 
@@ -53,7 +53,7 @@ fn main() {
                 let node = s.search_graph().create_node(&state);
                 //let elapsed = s.start_block(&node, &mut state, None, Some(time_limit), Some(97));
                 //let elapsed = s.start(&node, &mut state, None, Some(time_limit), Some(97));
-                let elapsed = s.start_parallel(&node, &state, None, Some(time_limit), Some(97), 8);
+                let elapsed = s.start_parallel(&node, &state, None, Some(time_limit), Some(97), 1);
                 let best_edge = SearchGraph::<()>::get_edge(
                     s.search_graph(),
                     &node,

@@ -9,12 +9,10 @@ use std::ops::Deref;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use parking_lot::RwLock;
 
+// TODO: switch to a single raw mutex and cells
 pub struct Node<I> {
     selection_count: AtomicU32,
     samples: Samples,
-
-    //has_been_expanded: AtomicBool,
-
     edges: RwLock<Vec<Edge<I>>>,
 }
 
@@ -24,7 +22,6 @@ pub struct Edge<I> {
     samples: Samples,
 
     node: Node<I>,
-    //node: Mutex<Option<Node<I>>>
 }
 
 unsafe impl<I> Sync for Node<I> {}
@@ -116,9 +113,6 @@ impl<S, O, D> SearchGraph<S> for SafeTree<D, O> {
     }
 
     fn is_leaf(&self, n: &Self::Node) -> bool {
-        // Not checking for has_been_expanded, as this check is valid even for nodes that have
-        // not been expanded
-        //unsafe { &*n.edges.get() }.is_empty()
         n.edges.read().is_empty()
     }
 
@@ -131,34 +125,21 @@ impl<S, O, D> SearchGraph<S> for SafeTree<D, O> {
         for e in l {
             children.push(e.into());
         }
-        /*
-        if !n.has_been_expanded.swap(true, Ordering::SeqCst) {
-            // This is the first time we are expanding this node
-            let children = unsafe { &mut *n.edges.get() };
-            for e in l {
-                children.push(e.into());
-            }
-        }*/
     }
 
     fn get_edge<'a>(&self, n: &'a Self::Node, ix: u32) -> &'a Self::Edge {
-        //debug_assert!(n.has_been_expanded.load(Ordering::SeqCst));
-        //assert!(n.has_been_expanded.load(Ordering::SeqCst));
-        //unsafe { &(&*n.edges.get())[ix as usize] }
         unsafe {
             let r = n.edges.read();
             let child = r.get_unchecked(ix as usize);
+
             // ( ⚆ _ ⚆ )
-            // borrow even when the lock is released
+            // allow borrow outside the guard
             std::mem::transmute(child)
         }
     }
 
 
     fn get_target_node<'a>(&self, e: &'a Self::Edge) -> &'a Self::Node {
-        //debug_assert!(e.node_created.load(Ordering::SeqCst));
-        //assert!(e.node_created.load(Ordering::SeqCst));
-        //unsafe { (*e.node.get()).as_ref().unwrap() }
         &e.node
     }
 }
@@ -247,8 +228,6 @@ impl<I> From<I> for Edge<I> {
             data,
             selection_count: AtomicU32::new(0),
             samples: Samples::new(),
-            //node_created: AtomicBool::new(false),
-            //node: Mutex::new(None),
             node: Node::new()
         }
     }
