@@ -36,16 +36,6 @@ fn main() {
         1,
         default_cpu,
     );
-    /*
-    let mut s = Search::new(
-        C4::new(9, 7),
-        SafeTree::<OnlyAction<_>, f32>::new(0.0),
-        UctPolicy::new(2.4),
-        BasicExpansion::new(OneStepGreedySimulator),
-        0.01,
-        1,
-        default_cpu,
-    );*/
 
     let mut state = s.problem().start_state();
 

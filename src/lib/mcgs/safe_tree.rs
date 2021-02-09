@@ -36,16 +36,17 @@ impl<O: Clone, I> Edge<O, I> {
 
 unsafe impl<O, I> Sync for Node<O, I> {}
 
-impl<I> OutcomeStore<f32> for Node<f32, I> {
-    fn expected_outcome(&self) -> f32 {
-        unsafe { &*self.internal.get() }.expected_sample
+impl<I, O: Clone + SimpleMovingAverage> OutcomeStore<O> for Node<O, I> {
+
+    fn expected_outcome(&self) -> O {
+        unsafe { &*self.internal.get() }.expected_sample.clone()
     }
 
     fn is_solved(&self) -> bool {
         unsafe { &*self.internal.get() }.is_solved()
     }
 
-    fn add_sample(&self, outcome: &f32, weight: u32) {
+    fn add_sample(&self, outcome: &O, weight: u32) {
         unsafe { &mut *self.internal.get() }.add_sample(outcome, weight)
     }
 
@@ -58,16 +59,16 @@ impl<I> OutcomeStore<f32> for Node<f32, I> {
     }
 }
 
-impl<I> OutcomeStore<f32> for Edge<f32, I> {
-    fn expected_outcome(&self) -> f32 {
-        unsafe { &*self.internal.get() }.expected_sample
+impl<I, O: Clone + SimpleMovingAverage> OutcomeStore<O> for Edge<O, I> {
+    fn expected_outcome(&self) -> O {
+        unsafe { &*self.internal.get() }.expected_sample.clone()
     }
 
     fn is_solved(&self) -> bool {
         panic!("Edge doesn't support solution storing")
     }
 
-    fn add_sample(&self, outcome: &f32, weight: u32) {
+    fn add_sample(&self, outcome: &O, weight: u32) {
         unsafe { &mut *self.internal.get() }.add_sample(outcome, weight)
     }
 
@@ -177,50 +178,6 @@ impl<O, I> Node<O, I> {
     }
 }
 
-impl<I> OutcomeStore<Vec<f32>> for Node<Vec<f32>, I> {
-    fn expected_outcome(&self) -> Vec<f32> {
-        unsafe { (&*self.internal.get()).expected_sample.clone() }
-    }
-
-    fn is_solved(&self) -> bool {
-        unsafe { (*self.internal.get()).is_solved() }
-    }
-
-    fn add_sample(&self, outcome: &Vec<f32>, weight: u32) {
-        unsafe { (&mut *self.internal.get()).add_sample(&outcome, weight) }
-    }
-
-    fn sample_count(&self) -> u32 {
-        unsafe { (*self.internal.get()).sample_count }
-    }
-
-    fn mark_solved(&self) {
-        unsafe { (*self.internal.get()).mark_solved() }
-    }
-}
-
-impl<I> OutcomeStore<Vec<f32>> for Edge<Vec<f32>, I> {
-    fn expected_outcome(&self) -> Vec<f32> {
-        unsafe { (&*self.internal.get()).expected_sample.clone() }
-    }
-
-    fn is_solved(&self) -> bool {
-        unsafe { (*self.internal.get()).is_solved() }
-    }
-
-    fn add_sample(&self, outcome: &Vec<f32>, weight: u32) {
-        unsafe { (&mut *self.internal.get()).add_sample(&outcome, weight) }
-    }
-
-    fn sample_count(&self) -> u32 {
-        unsafe { (*self.internal.get()).sample_count }
-    }
-
-    fn mark_solved(&self) {
-        unsafe { (*self.internal.get()).mark_solved() }
-    }
-}
-
 impl<O, A> Deref for Edge<O, OnlyAction<A>> {
     type Target = A;
 
@@ -276,30 +233,7 @@ impl<O: SimpleMovingAverage> Internal<O> {
         }
     }
 }
-/*
-// TODO: generalize
-impl Internal<f32> {
-    fn add_sample(&mut self, x: &f32, weight: u32) {
-        if !self.is_solved() {
-            self.sample_count += weight;
-            self.expected_sample +=
-                (weight as f32) * (x - self.expected_sample) / (self.sample_count as f32)
-        }
-    }
-}
-impl Internal<Vec<f32>> {
-    fn add_sample(&mut self, x: &Vec<f32>, weight: u32) {
-        if !self.is_solved() {
-            self.sample_count += weight;
-            for index in 0..self.expected_sample.len() {
-                self.expected_sample[index] += (weight as f32)
-                    * (x[index] - self.expected_sample[index])
-                    / (self.sample_count as f32)
-            }
-        }
-    }
-}
-*/
+
 impl<O: Display> Display for Internal<O> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
