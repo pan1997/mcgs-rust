@@ -5,7 +5,9 @@ use crate::lib::decision_process::{OneStepGreedySimulator, RandomSimulator};
 use crate::lib::mcgs::expansion_traits::{
     BasicExpansion, BasicExpansionWithUniformPrior, BlockExpansionFromBasic,
 };
-use crate::lib::mcgs::graph_policy::{MostVisitedPolicy, PuctPolicy, UctPolicy};
+use crate::lib::mcgs::graph_policy::{
+    MostVisitedPolicy, PuctPolicy, RandomPolicy, UctPolicy, WeightedRandomPolicyWithExpDepth,
+};
 use crate::lib::mcgs::safe_tree::SafeTree;
 use crate::lib::mcgs::search_graph::{OutcomeStore, SearchGraph, SelectCountStore};
 use crate::lib::mcgs::Search;
@@ -26,6 +28,16 @@ fn main() {
     );*/
     let default_cpu = 8;
     let mut s = Search::new(
+        C4::new(19, 19),
+        SafeTree::<OnlyAction<_>, f32>::new(0.0),
+        WeightedRandomPolicyWithExpDepth::new(RandomPolicy, UctPolicy::new(2.4), 0.01, -0.8),
+        BasicExpansion::new(OneStepGreedySimulator),
+        0.01,
+        1,
+        default_cpu,
+    );
+    /*
+    let mut s = Search::new(
         C4::new(9, 7),
         SafeTree::<OnlyAction<_>, f32>::new(0.0),
         UctPolicy::new(2.4),
@@ -33,7 +45,7 @@ fn main() {
         0.01,
         1,
         default_cpu,
-    );
+    );*/
 
     let mut state = s.problem().start_state();
 

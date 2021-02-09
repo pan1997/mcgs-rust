@@ -176,3 +176,60 @@ where
         best_edge
     }
 }
+
+struct WeightedRandomPolicy<P1, P2> {
+    p_epsilon: P1,
+    p: P2,
+    epsilon: f32,
+}
+
+impl<D, P, G, P1, P2> SelectionPolicy<D, P, G> for WeightedRandomPolicy<P1, P2>
+where
+    G: SearchGraph<D, P::State>,
+    P: DecisionProcess,
+    P1: SelectionPolicy<D, P, G>,
+    P2: SelectionPolicy<D, P, G>,
+{
+    fn select(&self, problem: &P, store: &G, node: &G::Node, agent: P::Agent, depth: u32) -> u32 {
+        let w: f32 = thread_rng().gen();
+        if w < self.epsilon {
+            self.p_epsilon.select(problem, store, node, agent, depth)
+        } else {
+            self.p.select(problem, store, node, agent, depth)
+        }
+    }
+}
+
+pub struct WeightedRandomPolicyWithExpDepth<P1, P2> {
+    p_epsilon: P1,
+    p: P2,
+    epsilon: f32,
+    factor: f32,
+}
+impl<P1, P2> WeightedRandomPolicyWithExpDepth<P1, P2> {
+    pub(crate) fn new(p1: P1, p2: P2, e: f32, f: f32) -> Self {
+        WeightedRandomPolicyWithExpDepth {
+            p: p2,
+            p_epsilon: p1,
+            epsilon: e,
+            factor: f,
+        }
+    }
+}
+impl<D, P, G, P1, P2> SelectionPolicy<D, P, G> for WeightedRandomPolicyWithExpDepth<P1, P2>
+where
+    G: SearchGraph<D, P::State>,
+    P: DecisionProcess,
+    P1: SelectionPolicy<D, P, G>,
+    P2: SelectionPolicy<D, P, G>,
+{
+    fn select(&self, problem: &P, store: &G, node: &G::Node, agent: P::Agent, depth: u32) -> u32 {
+        let w: f32 = thread_rng().gen();
+        let depth_factor = (self.factor * depth as f32).exp();
+        if w < self.epsilon * depth_factor {
+            self.p_epsilon.select(problem, store, node, agent, depth)
+        } else {
+            self.p.select(problem, store, node, agent, depth)
+        }
+    }
+}
