@@ -14,10 +14,9 @@ use std::time::Instant;
 use text_io::read;
 
 fn main() {
-
     let s = Search::new(
         C4::new(9, 7),
-        SafeTree::<ActionWithStaticPolicy<_>, Vec<f32>>::new(),
+        SafeTree::<ActionWithStaticPolicy<_>, f32>::new(),
         PuctPolicy::new(2.4, 20.0),
         BasicExpansionWithUniformPrior::new(RandomSimulator),
         0.01,
@@ -26,7 +25,7 @@ fn main() {
     /*
     let s = Search::new(
         C4::new(9, 7),
-        SafeTree::<OnlyAction<_>, Vec<f32>>::new(),
+        SafeTree::<OnlyAction<_>, f32>::new(),
         UctPolicy::new(2.4),
         BlockExpansionFromBasic::new(BasicExpansion::new(DefaultSimulator)),
         0.01,

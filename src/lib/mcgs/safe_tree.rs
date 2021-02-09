@@ -1,26 +1,27 @@
 use crate::lib::mcgs::samples::Samples;
 use crate::lib::mcgs::search_graph::{
-    OutcomeStore, PriorPolicyStore, SearchGraph, SelectCountStore,
+    ConcurrentAccess, OutcomeStore, PriorPolicyStore, SearchGraph, SelectCountStore,
 };
 use crate::lib::{ActionWithStaticPolicy, OnlyAction};
+use parking_lot::lock_api::RawMutex;
+use parking_lot::RawMutex as Mutex;
+use parking_lot::RwLock;
 use std::cell::UnsafeCell;
+use std::fmt::{Display, Formatter};
 use std::marker::PhantomData;
 use std::ops::Deref;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use parking_lot::RwLock;
 
 // TODO: switch to a single raw mutex and cells
 pub struct Node<I> {
-    selection_count: AtomicU32,
-    samples: Samples,
-    edges: RwLock<Vec<Edge<I>>>,
+    lock: Mutex,
+    internal: UnsafeCell<Internal<f32>>,
+    edges: UnsafeCell<Vec<Edge<I>>>,
 }
 
 pub struct Edge<I> {
     data: I,
-    selection_count: AtomicU32,
-    samples: Samples,
-
+    internal: UnsafeCell<Internal<f32>>,
     node: Node<I>,
 }
 
@@ -28,29 +29,29 @@ unsafe impl<I> Sync for Node<I> {}
 
 impl<I> OutcomeStore<f32> for Node<I> {
     fn expected_outcome(&self) -> f32 {
-        self.samples.expected_sample()
+        unsafe { &*self.internal.get() }.expected_sample
     }
 
     fn is_solved(&self) -> bool {
-        self.samples.is_solved()
+        unsafe { &*self.internal.get() }.is_solved()
     }
 
     fn add_sample(&self, outcome: &f32, weight: u32) {
-        self.samples.add_sample(*outcome, weight)
+        unsafe { &mut *self.internal.get() }.add_sample(outcome, weight)
     }
 
     fn sample_count(&self) -> u32 {
-        self.samples.count()
+        unsafe { &*self.internal.get() }.sample_count
     }
 
     fn mark_solved(&self) {
-        self.samples.mark_solved()
+        unsafe { &mut *self.internal.get() }.mark_solved()
     }
 }
 
 impl<I> OutcomeStore<f32> for Edge<I> {
     fn expected_outcome(&self) -> f32 {
-        self.samples.expected_sample()
+        unsafe { &*self.internal.get() }.expected_sample
     }
 
     fn is_solved(&self) -> bool {
@@ -58,11 +59,11 @@ impl<I> OutcomeStore<f32> for Edge<I> {
     }
 
     fn add_sample(&self, outcome: &f32, weight: u32) {
-        self.samples.add_sample(*outcome, weight)
+        unsafe { &mut *self.internal.get() }.add_sample(outcome, weight)
     }
 
     fn sample_count(&self) -> u32 {
-        self.samples.count()
+        unsafe { &*self.internal.get() }.sample_count
     }
 
     fn mark_solved(&self) {
@@ -73,23 +74,39 @@ impl<I> OutcomeStore<f32> for Edge<I> {
 // TODO: see if ordering can be relaxed
 impl<I> SelectCountStore for Node<I> {
     fn selection_count(&self) -> u32 {
-        self.selection_count.load(Ordering::SeqCst)
+        unsafe { &*self.internal.get() }.selection_count
     }
 
     fn increment_selection_count(&self) {
-        self.selection_count.fetch_add(1, Ordering::SeqCst);
+        unsafe { &mut *self.internal.get() }.selection_count += 1
     }
 }
 
 // TODO: see if ordering can be relaxed
 impl<I> SelectCountStore for Edge<I> {
     fn selection_count(&self) -> u32 {
-        self.selection_count.load(Ordering::SeqCst)
+        unsafe { &*self.internal.get() }.selection_count
     }
 
     fn increment_selection_count(&self) {
-        self.selection_count.fetch_add(1, Ordering::SeqCst);
+        unsafe { &mut *self.internal.get() }.selection_count += 1
     }
+}
+
+impl<I> ConcurrentAccess for Node<I> {
+    fn lock(&self) {
+        self.lock.lock()
+    }
+
+    fn unlock(&self) {
+        unsafe { self.lock.unlock() }
+    }
+}
+
+impl<I> ConcurrentAccess for Edge<I> {
+    // Locks not needed as we use the locks from the node
+    fn lock(&self) {}
+    fn unlock(&self) {}
 }
 
 pub struct SafeTree<D, O> {
@@ -113,31 +130,28 @@ impl<S, O, D> SearchGraph<S> for SafeTree<D, O> {
     }
 
     fn is_leaf(&self, n: &Self::Node) -> bool {
-        n.edges.read().is_empty()
+        unsafe { &*n.edges.get() }.is_empty()
     }
 
     fn children_count(&self, n: &Self::Node) -> u32 {
-        n.edges.read().len() as u32
+        unsafe { &*n.edges.get() }.len() as u32
     }
 
     fn create_children<I: Into<Self::Edge>, L: Iterator<Item = I>>(&self, n: &Self::Node, l: L) {
-        let mut children = n.edges.write();
-        for e in l {
-            children.push(e.into());
+        let children = unsafe { &mut *n.edges.get() };
+        if children.is_empty() {
+            for e in l {
+                children.push(e.into());
+            }
         }
     }
 
     fn get_edge<'a>(&self, n: &'a Self::Node, ix: u32) -> &'a Self::Edge {
         unsafe {
-            let r = n.edges.read();
-            let child = r.get_unchecked(ix as usize);
-
-            // ( ⚆ _ ⚆ )
-            // allow borrow outside the guard
-            std::mem::transmute(child)
+            let r = unsafe { &*n.edges.get() };
+            r.get_unchecked(ix as usize)
         }
     }
-
 
     fn get_target_node<'a>(&self, e: &'a Self::Edge) -> &'a Self::Node {
         &e.node
@@ -147,56 +161,54 @@ impl<S, O, D> SearchGraph<S> for SafeTree<D, O> {
 impl<I> Node<I> {
     fn new() -> Self {
         Node {
-            selection_count: AtomicU32::new(0),
-            samples: Samples::new(),
-            edges: RwLock::new(vec![]),
+            lock: RawMutex::INIT,
+            internal: UnsafeCell::new(Internal::new()),
+            edges: UnsafeCell::new(vec![]),
         }
     }
 }
 
 impl<I> OutcomeStore<Vec<f32>> for Node<I> {
     fn expected_outcome(&self) -> Vec<f32> {
-        vec![self.samples.expected_sample()]
+        unsafe { vec![(*self.internal.get()).expected_sample] }
     }
 
     fn is_solved(&self) -> bool {
-        self.samples.is_solved()
+        unsafe { (*self.internal.get()).is_solved() }
     }
 
     fn add_sample(&self, outcome: &Vec<f32>, weight: u32) {
-        //debug_assert!(outcome.len() == 1);
-        self.samples.add_sample(outcome[0], weight)
+        unsafe { (*self.internal.get()).add_sample(&outcome[0], weight) }
     }
 
     fn sample_count(&self) -> u32 {
-        self.samples.count()
+        unsafe { (*self.internal.get()).sample_count }
     }
 
     fn mark_solved(&self) {
-        self.samples.mark_solved()
+        unsafe { (*self.internal.get()).mark_solved() }
     }
 }
 
 impl<I> OutcomeStore<Vec<f32>> for Edge<I> {
     fn expected_outcome(&self) -> Vec<f32> {
-        vec![self.samples.expected_sample()]
+        unsafe { vec![(*self.internal.get()).expected_sample] }
     }
 
     fn is_solved(&self) -> bool {
-        panic!("Edge doesn't support solution storing")
+        unsafe { (*self.internal.get()).is_solved() }
     }
 
     fn add_sample(&self, outcome: &Vec<f32>, weight: u32) {
-        //debug_assert!(outcome.len() == 1);
-        self.samples.add_sample(outcome[0], weight)
+        unsafe { (*self.internal.get()).add_sample(&outcome[0], weight) }
     }
 
     fn sample_count(&self) -> u32 {
-        self.samples.count()
+        unsafe { (*self.internal.get()).sample_count }
     }
 
     fn mark_solved(&self) {
-        panic!("Edge doesn't support solution storing")
+        unsafe { (*self.internal.get()).mark_solved() }
     }
 }
 
@@ -226,9 +238,8 @@ impl<I> From<I> for Edge<I> {
     fn from(data: I) -> Self {
         Edge {
             data,
-            selection_count: AtomicU32::new(0),
-            samples: Samples::new(),
-            node: Node::new()
+            internal: UnsafeCell::new(Internal::new()),
+            node: Node::new(),
         }
     }
 }
@@ -236,8 +247,8 @@ impl<I> From<I> for Edge<I> {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use std::fmt::Display;
     use crossbeam::atomic::AtomicCell;
+    use std::fmt::Display;
 
     #[test]
     fn t1() {
@@ -258,10 +269,10 @@ pub(crate) mod tests {
     pub fn print_graph<O, D: Display>(ns: &SafeTree<D, O>, n: &Node<D>, offset: u32, full: bool) {
         println!(
             "node: {{s_count: {}, score: {}}}",
-            n.selection_count.load(Ordering::SeqCst),
-            n.samples,
+            n.selection_count(),
+            unsafe { &*n.internal.get() }
         );
-        if n.selection_count.load(Ordering::SeqCst) >= 0 {
+        if n.selection_count() >= 0 {
             for e in 0..SearchGraph::<()>::children_count(ns, n) {
                 for _ in 0..offset {
                     print!("  ");
@@ -269,18 +280,73 @@ pub(crate) mod tests {
                 print!("|-");
                 let edge = SearchGraph::<()>::get_edge(ns, n, e);
                 print!(
-                    "-> {{data: {}, s_count: {}, score: {}}} ",
+                    "-> {{data: {}, s_count: {}}} ",
                     edge.data,
-                    edge.selection_count.load(Ordering::SeqCst),
-                    edge.samples
+                    edge.selection_count(),
+                    //Edge::<D>::expected_outcome(edge)
                 );
                 if !full {
                     println!("-> !");
                 } else {
-                    print_graph(ns, SearchGraph::<()>::get_target_node(ns, edge), offset + 1,
-                                full);
+                    print_graph(
+                        ns,
+                        SearchGraph::<()>::get_target_node(ns, edge),
+                        offset + 1,
+                        full,
+                    );
                 }
             }
+        }
+    }
+}
+
+struct Internal<O> {
+    expected_sample: O,
+    sample_count: u32,
+    selection_count: u32,
+}
+
+impl<O: Default> Internal<O> {
+    fn new() -> Self {
+        Internal {
+            expected_sample: Default::default(),
+            sample_count: 0,
+            selection_count: 0,
+        }
+    }
+
+    fn is_solved(&self) -> bool {
+        self.sample_count == u32::MAX
+    }
+
+    fn mark_solved(&mut self) {
+        self.sample_count = u32::MAX
+    }
+}
+
+impl Internal<f32> {
+    fn add_sample(&mut self, x: &f32, weight: u32) {
+        if self.is_solved() {
+            //println!("attempting to add a sample to a solved store. ignoring")
+        } else {
+            self.sample_count += weight;
+            self.expected_sample +=
+                (weight as f32) * (x - self.expected_sample) / (self.sample_count as f32)
+        }
+    }
+}
+
+impl<O: Display + Default> Display for Internal<O> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{{n_count: {}, score: {:.2}",
+            self.selection_count, self.expected_sample
+        )?;
+        if self.is_solved() {
+            write!(f, "}}")
+        } else {
+            write!(f, ", count: {}", self.sample_count)
         }
     }
 }

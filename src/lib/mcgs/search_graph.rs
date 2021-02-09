@@ -15,6 +15,11 @@ pub trait SelectCountStore {
     fn increment_selection_count(&self);
 }
 
+pub trait ConcurrentAccess {
+    fn lock(&self);
+    fn unlock(&self);
+}
+
 pub trait PriorPolicyStore {
     fn prior_policy_score(&self) -> f32;
 }

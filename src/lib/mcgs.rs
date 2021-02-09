@@ -55,7 +55,7 @@ where
     P: DecisionProcess,
     G: SearchGraph<P::State>,
     S: SelectionPolicy<P, G>,
-    G::Node: SelectCountStore + OutcomeStore<P::Outcome>,
+    G::Node: SelectCountStore + OutcomeStore<P::Outcome> + ConcurrentAccess,
     G::Edge: SelectCountStore + OutcomeStore<P::Outcome> + Deref<Target = P::Action>,
     <P::Outcome as Outcome<P::Agent>>::RewardType: Distance,
 {
@@ -96,6 +96,7 @@ where
         undo_stack: &mut Vec<P::UndoAction>,
     ) -> SelectionResult<&'a G::Node, P::Outcome> {
         let mut node = root;
+        node.lock();
         while !self.search_graph.is_leaf(node) {
             let agent = self.problem.agent_to_act(state);
 
@@ -107,6 +108,7 @@ where
 
             node.increment_selection_count();
             edge.increment_selection_count();
+            node.unlock();
 
             trajectory.push((node, edge));
             undo_stack.push(self.problem.transition(state, &edge));
@@ -117,7 +119,7 @@ where
                 return SelectionResult::Expand(next_node);
             }*/
             let next_node = self.search_graph.get_target_node(edge);
-
+            next_node.lock();
             // Check if this is a transposition (next_node has extra samples)
             let n_count = next_node.sample_count();
             let e_count = edge.sample_count();
@@ -137,12 +139,14 @@ where
 
             // We need an additional terminal check, as we can mark non leaf nodes as terminal
             if next_node.is_solved() {
+                next_node.unlock();
                 return SelectionResult::Propagate(next_node, next_node.expected_outcome(), 1);
             }
 
             node = next_node;
         }
         //println!("hey.....");
+        node.unlock();
         SelectionResult::Expand(node)
     }
 
@@ -157,8 +161,10 @@ where
     {
         let expansion_result = self.expand_operation.apply(&self.problem, state);
         if !expansion_result.prune {
+            node.lock();
             self.search_graph
                 .create_children(node, expansion_result.edges);
+            node.unlock();
         }
         (node, expansion_result.outcome, 1, expansion_result.prune)
     }
@@ -171,14 +177,18 @@ where
         weight: u32,
         prune: bool,
     ) {
+        node.lock();
         node.add_sample(&outcome, weight);
         if prune {
             node.mark_solved();
         }
+        node.unlock();
         // TODO: add graph propogation
         while let Some((node, edge)) = trajectory.pop() {
+            node.lock();
             edge.add_sample(&outcome, weight);
             node.add_sample(&outcome, weight);
+            node.unlock();
         }
     }
 
@@ -450,7 +460,7 @@ where
                     print!("}}-> ");
                 }
             } else {
-                break
+                break;
             }
             trajectory.push((root, edge));
             root = self.search_graph.get_target_node(edge);
@@ -472,15 +482,15 @@ impl<O: Clone, EI: Clone> Clone for ExpansionResult<O, EI> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::lib::decision_process::c4::C4;
     use crate::lib::decision_process::graph_dp::tests::{problem1, problem2, DSim};
+    use crate::lib::decision_process::DefaultSimulator;
     use crate::lib::mcgs::expansion_traits::{
         BasicExpansion, BasicExpansionWithUniformPrior, BlockExpansionFromBasic,
     };
     use crate::lib::mcgs::safe_tree::tests::print_graph;
     use crate::lib::mcgs::safe_tree::SafeTree;
     use crate::lib::{ActionWithStaticPolicy, OnlyAction};
-    use crate::lib::decision_process::c4::C4;
-    use crate::lib::decision_process::DefaultSimulator;
 
     #[test]
     fn random() {
@@ -576,10 +586,10 @@ mod tests {
 
         let state = &mut s.problem.start_state();
         let n = s.search_graph.create_node(state);
-        print_graph(&s.search_graph, &n, 0,true);
+        print_graph(&s.search_graph, &n, 0, true);
         for _ in 0..100 {
             s.one_iteration(&n, state);
-            print_graph(&s.search_graph, &n, 0,true);
+            print_graph(&s.search_graph, &n, 0, true);
         }
     }
 
