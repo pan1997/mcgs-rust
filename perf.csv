@@ -1,0 +1,7 @@
+tree policy, expansion, simulation, worker, nps
+uct, basic, random, 1, 272
+uct, basic, random, 2, 447
+uct, basic, random, 4, 710
+uct, basic, random, 8, 900
+
+

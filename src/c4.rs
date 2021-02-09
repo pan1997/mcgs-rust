@@ -1,7 +1,7 @@
 mod lib;
 use crate::lib::decision_process::c4::{Move, C4};
-use crate::lib::decision_process::RandomSimulator;
 use crate::lib::decision_process::{DecisionProcess, DefaultSimulator};
+use crate::lib::decision_process::{OneStepGreedySimulator, RandomSimulator};
 use crate::lib::mcgs::expansion_traits::{
     BasicExpansion, BasicExpansionWithUniformPrior, BlockExpansionFromBasic,
 };
@@ -24,19 +24,20 @@ fn main() {
         0.01,
         1,
     );*/
-
-    let s = Search::new(
+    let default_cpu = 8;
+    let mut s = Search::new(
         C4::new(9, 7),
-        SafeTree::<OnlyAction<_>, f32>::new(),
+        SafeTree::<OnlyAction<_>, f32>::new(0.0),
         UctPolicy::new(2.4),
-        BlockExpansionFromBasic::new(BasicExpansion::new(RandomSimulator)),
+        BasicExpansion::new(OneStepGreedySimulator),
         0.01,
         1,
+        default_cpu,
     );
 
     let mut state = s.problem().start_state();
 
-    println!("C4 mcts ST");
+    println!("Initialised for {} cpu", default_cpu);
     loop {
         let token: String = read!();
         match token.as_str() {
@@ -47,13 +48,18 @@ fn main() {
                 let m = Move(col);
                 s.problem().transition(&mut state, &m);
             }
+            "cpu" => {
+                let count = read!();
+                s.set_worker_count(count);
+                println!("Using {} cpus", count)
+            }
             "board" => println!("{}", state),
             "analyse" => {
                 println!("{}", state);
                 let time_limit: u128 = read!();
                 let node = s.search_graph().create_node(&state);
-                let elapsed = s.start_parallel(&node, &state, None, Some(time_limit), Some(97), 2);
-                let best_edge = SearchGraph::<()>::get_edge(
+                let elapsed = s.start_parallel(&node, &state, None, Some(time_limit), Some(97));
+                let best_edge = SearchGraph::<_, ()>::get_edge(
                     s.search_graph(),
                     &node,
                     MostVisitedPolicy.select(s.problem(), s.search_graph(), &node),

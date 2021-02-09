@@ -1,4 +1,4 @@
-use crate::lib::decision_process::{DecisionProcess, Outcome};
+use crate::lib::decision_process::{DecisionProcess, Outcome, WinnableOutcome};
 use std::fmt::{Display, Formatter};
 use std::num::Wrapping;
 
@@ -27,8 +27,6 @@ pub(crate) struct C4 {
     height: usize,
     size: usize, // = width * height
 }
-// 0 is draw, otherwise it stores the winner
-//pub struct C4Outcome(Player);
 
 impl DecisionProcess for C4 {
     type Agent = Player;
@@ -205,6 +203,15 @@ impl Outcome<Player> for f32 {
         match a {
             B => -*self,
             _ => *self,
+        }
+    }
+}
+
+impl WinnableOutcome<Player> for f32 {
+    fn is_winning_for(&self, a: Player) -> bool {
+        match a {
+            B => *self < -0.95,
+            _ => *self > 0.95,
         }
     }
 }

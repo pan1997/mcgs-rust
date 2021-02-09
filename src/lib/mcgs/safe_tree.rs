@@ -1,3 +1,4 @@
+use crate::lib::decision_process::{Outcome, SimpleMovingAverage};
 use crate::lib::mcgs::samples::Samples;
 use crate::lib::mcgs::search_graph::{
     ConcurrentAccess, OutcomeStore, PriorPolicyStore, SearchGraph, SelectCountStore,
@@ -6,26 +7,36 @@ use crate::lib::{ActionWithStaticPolicy, OnlyAction};
 use parking_lot::lock_api::RawMutex;
 use parking_lot::RawMutex as Mutex;
 use std::cell::UnsafeCell;
-use std::fmt::{Display, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use std::marker::PhantomData;
 use std::ops::Deref;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
-pub struct Node<I> {
+pub struct Node<O, I> {
     lock: Mutex,
-    internal: UnsafeCell<Internal<f32>>,
-    edges: UnsafeCell<Vec<Edge<I>>>,
+    internal: UnsafeCell<Internal<O>>,
+    edges: UnsafeCell<Vec<Edge<O, I>>>,
 }
 
-pub struct Edge<I> {
+pub struct Edge<O, I> {
     data: I,
-    internal: UnsafeCell<Internal<f32>>,
-    node: Node<I>,
+    internal: UnsafeCell<Internal<O>>,
+    node: Node<O, I>,
 }
 
-unsafe impl<I> Sync for Node<I> {}
+impl<O: Clone, I> Edge<O, I> {
+    fn new(i: I, outcome: O) -> Self {
+        Edge {
+            data: i,
+            internal: UnsafeCell::new(Internal::new(outcome.clone())),
+            node: Node::new(outcome),
+        }
+    }
+}
 
-impl<I> OutcomeStore<f32> for Node<I> {
+unsafe impl<O, I> Sync for Node<O, I> {}
+
+impl<I> OutcomeStore<f32> for Node<f32, I> {
     fn expected_outcome(&self) -> f32 {
         unsafe { &*self.internal.get() }.expected_sample
     }
@@ -47,7 +58,7 @@ impl<I> OutcomeStore<f32> for Node<I> {
     }
 }
 
-impl<I> OutcomeStore<f32> for Edge<I> {
+impl<I> OutcomeStore<f32> for Edge<f32, I> {
     fn expected_outcome(&self) -> f32 {
         unsafe { &*self.internal.get() }.expected_sample
     }
@@ -69,7 +80,7 @@ impl<I> OutcomeStore<f32> for Edge<I> {
     }
 }
 
-impl<I> SelectCountStore for Node<I> {
+impl<O, I> SelectCountStore for Node<O, I> {
     fn selection_count(&self) -> u32 {
         unsafe { &*self.internal.get() }.selection_count
     }
@@ -79,7 +90,7 @@ impl<I> SelectCountStore for Node<I> {
     }
 }
 
-impl<I> SelectCountStore for Edge<I> {
+impl<O, I> SelectCountStore for Edge<O, I> {
     fn selection_count(&self) -> u32 {
         unsafe { &*self.internal.get() }.selection_count
     }
@@ -89,7 +100,7 @@ impl<I> SelectCountStore for Edge<I> {
     }
 }
 
-impl<I> ConcurrentAccess for Node<I> {
+impl<O, I> ConcurrentAccess for Node<O, I> {
     fn lock(&self) {
         self.lock.lock()
     }
@@ -99,30 +110,32 @@ impl<I> ConcurrentAccess for Node<I> {
     }
 }
 
-impl<I> ConcurrentAccess for Edge<I> {
+impl<O, I> ConcurrentAccess for Edge<O, I> {
     // Locks not needed as we use the locks from the node
     fn lock(&self) {}
     fn unlock(&self) {}
 }
 
 pub struct SafeTree<D, O> {
+    default_outcome: O,
     phantom: PhantomData<(D, O)>,
 }
 
 impl<D, O> SafeTree<D, O> {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(outcome: O) -> Self {
         SafeTree {
+            default_outcome: outcome,
             phantom: PhantomData,
         }
     }
 }
 
-impl<S, O, D> SearchGraph<S> for SafeTree<D, O> {
-    type Node = Node<D>;
-    type Edge = Edge<D>;
+impl<S, O: Clone, D> SearchGraph<D, S> for SafeTree<D, O> {
+    type Node = Node<O, D>;
+    type Edge = Edge<O, D>;
 
     fn create_node(&self, _: &S) -> Box<Self::Node> {
-        Box::new(Node::new())
+        Box::new(Node::new(self.default_outcome.clone()))
     }
 
     fn is_leaf(&self, n: &Self::Node) -> bool {
@@ -133,11 +146,11 @@ impl<S, O, D> SearchGraph<S> for SafeTree<D, O> {
         unsafe { &*n.edges.get() }.len() as u32
     }
 
-    fn create_children<I: Into<Self::Edge>, L: Iterator<Item = I>>(&self, n: &Self::Node, l: L) {
+    fn create_children<L: Iterator<Item = D>>(&self, n: &Self::Node, l: L) {
         let children = unsafe { &mut *n.edges.get() };
         if children.is_empty() {
             for e in l {
-                children.push(e.into());
+                children.push(Self::Edge::new(e, self.default_outcome.clone()));
             }
         }
     }
@@ -154,19 +167,19 @@ impl<S, O, D> SearchGraph<S> for SafeTree<D, O> {
     }
 }
 
-impl<I> Node<I> {
-    fn new() -> Self {
+impl<O, I> Node<O, I> {
+    fn new(outcome: O) -> Self {
         Node {
             lock: RawMutex::INIT,
-            internal: UnsafeCell::new(Internal::new()),
+            internal: UnsafeCell::new(Internal::new(outcome)),
             edges: UnsafeCell::new(vec![]),
         }
     }
 }
 
-impl<I> OutcomeStore<Vec<f32>> for Node<I> {
+impl<I> OutcomeStore<Vec<f32>> for Node<Vec<f32>, I> {
     fn expected_outcome(&self) -> Vec<f32> {
-        unsafe { vec![(*self.internal.get()).expected_sample] }
+        unsafe { (&*self.internal.get()).expected_sample.clone() }
     }
 
     fn is_solved(&self) -> bool {
@@ -174,7 +187,7 @@ impl<I> OutcomeStore<Vec<f32>> for Node<I> {
     }
 
     fn add_sample(&self, outcome: &Vec<f32>, weight: u32) {
-        unsafe { (*self.internal.get()).add_sample(&outcome[0], weight) }
+        unsafe { (&mut *self.internal.get()).add_sample(&outcome, weight) }
     }
 
     fn sample_count(&self) -> u32 {
@@ -186,9 +199,9 @@ impl<I> OutcomeStore<Vec<f32>> for Node<I> {
     }
 }
 
-impl<I> OutcomeStore<Vec<f32>> for Edge<I> {
+impl<I> OutcomeStore<Vec<f32>> for Edge<Vec<f32>, I> {
     fn expected_outcome(&self) -> Vec<f32> {
-        unsafe { vec![(*self.internal.get()).expected_sample] }
+        unsafe { (&*self.internal.get()).expected_sample.clone() }
     }
 
     fn is_solved(&self) -> bool {
@@ -196,7 +209,7 @@ impl<I> OutcomeStore<Vec<f32>> for Edge<I> {
     }
 
     fn add_sample(&self, outcome: &Vec<f32>, weight: u32) {
-        unsafe { (*self.internal.get()).add_sample(&outcome[0], weight) }
+        unsafe { (&mut *self.internal.get()).add_sample(&outcome, weight) }
     }
 
     fn sample_count(&self) -> u32 {
@@ -208,7 +221,7 @@ impl<I> OutcomeStore<Vec<f32>> for Edge<I> {
     }
 }
 
-impl<A> Deref for Edge<OnlyAction<A>> {
+impl<O, A> Deref for Edge<O, OnlyAction<A>> {
     type Target = A;
 
     fn deref(&self) -> &Self::Target {
@@ -216,7 +229,7 @@ impl<A> Deref for Edge<OnlyAction<A>> {
     }
 }
 
-impl<A> Deref for Edge<ActionWithStaticPolicy<A>> {
+impl<O, A> Deref for Edge<O, ActionWithStaticPolicy<A>> {
     type Target = A;
 
     fn deref(&self) -> &Self::Target {
@@ -224,18 +237,95 @@ impl<A> Deref for Edge<ActionWithStaticPolicy<A>> {
     }
 }
 
-impl<A> PriorPolicyStore for Edge<ActionWithStaticPolicy<A>> {
+impl<O, A> PriorPolicyStore for Edge<O, ActionWithStaticPolicy<A>> {
     fn prior_policy_score(&self) -> f32 {
         self.data.static_policy_score
     }
 }
 
-impl<I> From<I> for Edge<I> {
-    fn from(data: I) -> Self {
-        Edge {
-            data,
-            internal: UnsafeCell::new(Internal::new()),
-            node: Node::new(),
+struct Internal<O> {
+    expected_sample: O,
+    sample_count: u32,
+    selection_count: u32,
+}
+
+impl<O> Internal<O> {
+    fn new(outcome: O) -> Self {
+        Internal {
+            expected_sample: outcome,
+            sample_count: 0,
+            selection_count: 0,
+        }
+    }
+
+    fn is_solved(&self) -> bool {
+        self.sample_count == u32::MAX
+    }
+
+    fn mark_solved(&mut self) {
+        self.sample_count = u32::MAX
+    }
+}
+
+impl<O: SimpleMovingAverage> Internal<O> {
+    fn add_sample(&mut self, x: &O, weight: u32) {
+        if !self.is_solved() {
+            self.sample_count += weight;
+            self.expected_sample
+                .update_with_moving_average(x, weight, self.sample_count)
+        }
+    }
+}
+/*
+// TODO: generalize
+impl Internal<f32> {
+    fn add_sample(&mut self, x: &f32, weight: u32) {
+        if !self.is_solved() {
+            self.sample_count += weight;
+            self.expected_sample +=
+                (weight as f32) * (x - self.expected_sample) / (self.sample_count as f32)
+        }
+    }
+}
+impl Internal<Vec<f32>> {
+    fn add_sample(&mut self, x: &Vec<f32>, weight: u32) {
+        if !self.is_solved() {
+            self.sample_count += weight;
+            for index in 0..self.expected_sample.len() {
+                self.expected_sample[index] += (weight as f32)
+                    * (x[index] - self.expected_sample[index])
+                    / (self.sample_count as f32)
+            }
+        }
+    }
+}
+*/
+impl<O: Display> Display for Internal<O> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{{n_count: {}, score: {:.2}",
+            self.selection_count, self.expected_sample
+        )?;
+        if self.is_solved() {
+            write!(f, "}}")
+        } else {
+            write!(f, ", count: {}", self.sample_count)
+        }
+    }
+}
+
+impl<O: Debug> Debug for Internal<O> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{{n_count: {}, score: {:.2?}",
+            self.selection_count, self.expected_sample
+        )?;
+        if self.is_solved() {
+            write!(f, "}}")
+        } else {
+            write!(f, ", count: {}", self.sample_count)
         }
     }
 }
@@ -244,7 +334,7 @@ impl<I> From<I> for Edge<I> {
 pub(crate) mod tests {
     use super::*;
     use crossbeam::atomic::AtomicCell;
-    use std::fmt::Display;
+    use std::fmt::{Debug, Display};
 
     #[test]
     fn t1() {
@@ -262,19 +352,24 @@ pub(crate) mod tests {
         println!("{}", x);
     }
 
-    pub fn print_graph<O, D: Display>(ns: &SafeTree<D, O>, n: &Node<D>, offset: u32, full: bool) {
+    pub fn print_graph<O: Debug + Clone, D: Display>(
+        ns: &SafeTree<D, O>,
+        n: &Node<O, D>,
+        offset: u32,
+        full: bool,
+    ) {
         println!(
-            "node: {{s_count: {}, score: {}}}",
+            "node: {{s_count: {}, score: {:?}}}",
             n.selection_count(),
             unsafe { &*n.internal.get() }
         );
-        if n.selection_count() >= 0 {
-            for e in 0..SearchGraph::<()>::children_count(ns, n) {
+        if n.selection_count() > 0 {
+            for e in 0..SearchGraph::<_, ()>::children_count(ns, n) {
                 for _ in 0..offset {
                     print!("  ");
                 }
                 print!("|-");
-                let edge = SearchGraph::<()>::get_edge(ns, n, e);
+                let edge = SearchGraph::<_, ()>::get_edge(ns, n, e);
                 print!(
                     "-> {{data: {}, s_count: {}}} ",
                     edge.data,
@@ -286,63 +381,12 @@ pub(crate) mod tests {
                 } else {
                     print_graph(
                         ns,
-                        SearchGraph::<()>::get_target_node(ns, edge),
+                        SearchGraph::<_, ()>::get_target_node(ns, edge),
                         offset + 1,
                         full,
                     );
                 }
             }
-        }
-    }
-}
-
-struct Internal<O> {
-    expected_sample: O,
-    sample_count: u32,
-    selection_count: u32,
-}
-
-impl<O: Default> Internal<O> {
-    fn new() -> Self {
-        Internal {
-            expected_sample: Default::default(),
-            sample_count: 0,
-            selection_count: 0,
-        }
-    }
-
-    fn is_solved(&self) -> bool {
-        self.sample_count == u32::MAX
-    }
-
-    fn mark_solved(&mut self) {
-        self.sample_count = u32::MAX
-    }
-}
-
-impl Internal<f32> {
-    fn add_sample(&mut self, x: &f32, weight: u32) {
-        if self.is_solved() {
-            //println!("attempting to add a sample to a solved store. ignoring")
-        } else {
-            self.sample_count += weight;
-            self.expected_sample +=
-                (weight as f32) * (x - self.expected_sample) / (self.sample_count as f32)
-        }
-    }
-}
-
-impl<O: Display + Default> Display for Internal<O> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{{n_count: {}, score: {:.2}",
-            self.selection_count, self.expected_sample
-        )?;
-        if self.is_solved() {
-            write!(f, "}}")
-        } else {
-            write!(f, ", count: {}", self.sample_count)
         }
     }
 }

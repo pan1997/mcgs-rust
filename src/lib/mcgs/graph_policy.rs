@@ -1,13 +1,14 @@
-use crate::lib::decision_process::{DecisionProcess, Outcome};
+use crate::lib::decision_process::{DecisionProcess, Outcome, WinnableOutcome};
 use crate::lib::mcgs::search_graph::{
     OutcomeStore, PriorPolicyStore, SearchGraph, SelectCountStore,
 };
 use num::ToPrimitive;
 use rand::{thread_rng, Rng};
+use std::process::exit;
 
-pub trait SelectionPolicy<P, G>
+pub trait SelectionPolicy<D, P, G>
 where
-    G: SearchGraph<P::State>,
+    G: SearchGraph<D, P::State>,
     P: DecisionProcess,
 {
     //TODO: see if we can return the edge ref
@@ -15,7 +16,7 @@ where
 }
 
 pub struct RandomPolicy;
-impl<P: DecisionProcess, G: SearchGraph<P::State>> SelectionPolicy<P, G> for RandomPolicy {
+impl<D, P: DecisionProcess, G: SearchGraph<D, P::State>> SelectionPolicy<D, P, G> for RandomPolicy {
     fn select(&self, _: &P, store: &G, node: &G::Node, _: P::Agent, _: u32) -> u32 {
         let k = store.children_count(node);
         debug_assert!(k > 0);
@@ -24,10 +25,10 @@ impl<P: DecisionProcess, G: SearchGraph<P::State>> SelectionPolicy<P, G> for Ran
 }
 
 struct FirstNonVisitedPolicy;
-impl<P, G> SelectionPolicy<P, G> for FirstNonVisitedPolicy
+impl<D, P, G> SelectionPolicy<D, P, G> for FirstNonVisitedPolicy
 where
     P: DecisionProcess,
-    G: SearchGraph<P::State>,
+    G: SearchGraph<D, P::State>,
     G::Edge: SelectCountStore,
 {
     fn select(&self, _: &P, store: &G, node: &G::Node, _: P::Agent, _: u32) -> u32 {
@@ -45,10 +46,10 @@ where
 
 pub struct MostVisitedPolicy;
 impl MostVisitedPolicy {
-    pub(crate) fn select<P, G>(&self, _: &P, store: &G, node: &G::Node) -> u32
+    pub(crate) fn select<D, P, G>(&self, _: &P, store: &G, node: &G::Node) -> u32
     where
         P: DecisionProcess,
-        G: SearchGraph<P::State>,
+        G: SearchGraph<D, P::State>,
         G::Edge: SelectCountStore,
     {
         let edge_count = store.children_count(node);
@@ -78,10 +79,10 @@ impl UctPolicy {
     }
 }
 
-impl<P, G> SelectionPolicy<P, G> for UctPolicy
+impl<D, P, G> SelectionPolicy<D, P, G> for UctPolicy
 where
     P: DecisionProcess,
-    G: SearchGraph<P::State>,
+    G: SearchGraph<D, P::State>,
     G::Edge: SelectCountStore + OutcomeStore<P::Outcome>,
     G::Node: SelectCountStore,
     <P::Outcome as Outcome<P::Agent>>::RewardType: ToPrimitive,
@@ -114,7 +115,6 @@ where
                 best_edge = edge_index;
             }
         }
-        // Returns an invalid edge when all edges have been visited
         best_edge
     }
 }
@@ -133,10 +133,10 @@ impl PuctPolicy {
     }
 }
 
-impl<P, G> SelectionPolicy<P, G> for PuctPolicy
+impl<D, P, G> SelectionPolicy<D, P, G> for PuctPolicy
 where
     P: DecisionProcess,
-    G: SearchGraph<P::State>,
+    G: SearchGraph<D, P::State>,
     G::Edge: SelectCountStore + OutcomeStore<P::Outcome> + PriorPolicyStore,
     G::Node: SelectCountStore,
     <P::Outcome as Outcome<P::Agent>>::RewardType: ToPrimitive,
@@ -172,7 +172,7 @@ where
                 best_edge = edge_index;
             }
         }
-        // Returns an invalid edge when all edges have been visited
+
         best_edge
     }
 }

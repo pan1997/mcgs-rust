@@ -7,10 +7,11 @@ pub(crate) mod search_graph;
 use graph_policy::*;
 use search_graph::*;
 
-use crate::lib::decision_process::{DecisionProcess, Distance, Outcome};
+use crate::lib::decision_process::{DecisionProcess, Distance, Outcome, SimpleMovingAverage};
 use crate::lib::mcgs::expansion_traits::{BlockExpansionTrait, ExpansionTrait};
 use std::cmp::min;
 use std::fmt::Display;
+use std::marker::PhantomData;
 use std::ops::Deref;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::thread::sleep;
@@ -35,13 +36,15 @@ pub struct ExpansionResult<O, EI> {
 /// implementation and avoids expensive safeguards to enable safe sharing of the search tree
 /// among multiple workers.
 
-pub struct Search<P, S, R, G, X> {
+pub struct Search<P, S, R, G, X, D> {
     problem: P,
     search_graph: G,
     selection_policy: S,
     expand_operation: X,
     q_shorting_bound: R,
     maximum_trajectory_weight: u32,
+    worker_count: u32,
+    phantom: PhantomData<D>,
 }
 
 enum SelectionResult<N, V> {
@@ -49,15 +52,16 @@ enum SelectionResult<N, V> {
     Propagate(N, V, u32), // The second arg is the weight
 }
 
-impl<P, S, G, X>
-    Search<P, S, <<P::Outcome as Outcome<P::Agent>>::RewardType as Distance>::NormType, G, X>
+impl<P, S, G, X, D>
+    Search<P, S, <<P::Outcome as Outcome<P::Agent>>::RewardType as Distance>::NormType, G, X, D>
 where
     P: DecisionProcess,
-    G: SearchGraph<P::State>,
-    S: SelectionPolicy<P, G>,
+    G: SearchGraph<D, P::State>,
+    S: SelectionPolicy<D, P, G>,
     G::Node: SelectCountStore + OutcomeStore<P::Outcome> + ConcurrentAccess,
     G::Edge: SelectCountStore + OutcomeStore<P::Outcome> + Deref<Target = P::Action>,
     <P::Outcome as Outcome<P::Agent>>::RewardType: Distance,
+    P::Outcome: SimpleMovingAverage,
 {
     pub(crate) fn new(
         problem: P,
@@ -66,6 +70,7 @@ where
         expand_operation: X,
         q_shorting_bound: <<P::Outcome as Outcome<P::Agent>>::RewardType as Distance>::NormType,
         maximum_trajectory_weight: u32,
+        worker_count: u32,
     ) -> Self {
         Search {
             problem,
@@ -74,7 +79,13 @@ where
             expand_operation,
             q_shorting_bound,
             maximum_trajectory_weight,
+            worker_count,
+            phantom: PhantomData,
         }
+    }
+
+    pub(crate) fn set_worker_count(&mut self, w: u32) {
+        self.worker_count = w;
     }
 
     pub(crate) fn problem(&self) -> &P {
@@ -152,14 +163,13 @@ where
         SelectionResult::Expand(node)
     }
 
-    fn expand<'a, I>(
+    fn expand<'a>(
         &self,
         node: &'a G::Node,
         state: &mut P::State,
     ) -> (&'a G::Node, P::Outcome, u32, bool)
     where
-        X: ExpansionTrait<P, I>,
-        G::Edge: From<I>,
+        X: ExpansionTrait<P, D>,
     {
         let expansion_result = self.expand_operation.apply(&self.problem, state);
         if !expansion_result.prune {
@@ -175,11 +185,12 @@ where
         &self,
         trajectory: &mut Vec<(&G::Node, &G::Edge)>,
         node: &G::Node,
-        outcome: P::Outcome,
-        weight: u32,
+        mut outcome: P::Outcome,
+        mut weight: u32,
         prune: bool,
     ) {
         node.lock();
+        let mut child_sample_count = node.sample_count();
         node.add_sample(&outcome, weight);
         if prune {
             node.mark_solved();
@@ -188,16 +199,32 @@ where
         // TODO: add graph propogation
         while let Some((node, edge)) = trajectory.pop() {
             node.lock();
+            let edge_sample_count = edge.sample_count();
+            // The child node is a transposition
+            if child_sample_count > edge_sample_count {
+                // TODO: fix
+                let old_weight = weight;
+                weight = min(
+                    child_sample_count - edge_sample_count,
+                    self.maximum_trajectory_weight,
+                );
+                outcome.update_with_moving_average(
+                    &node.expected_outcome(),
+                    weight,
+                    (weight + old_weight),
+                )
+            }
+
             edge.add_sample(&outcome, weight);
+            child_sample_count = node.sample_count();
             node.add_sample(&outcome, weight);
             node.unlock();
         }
     }
 
-    pub(crate) fn one_iteration<I>(&self, root: &G::Node, state: &mut P::State)
+    pub(crate) fn one_iteration(&self, root: &G::Node, state: &mut P::State)
     where
-        X: ExpansionTrait<P, I>,
-        G::Edge: From<I>,
+        X: ExpansionTrait<P, D>,
     {
         let trajectory = &mut vec![];
         let undo_stack = &mut vec![];
@@ -215,10 +242,9 @@ where
         self.propagate(trajectory, node, outcome, weight, prune);
     }
 
-    fn one_block<I>(&self, root: &G::Node, state: &mut P::State, size: usize)
+    fn one_block(&self, root: &G::Node, state: &mut P::State, size: usize)
     where
-        X: BlockExpansionTrait<P, I>,
-        G::Edge: From<I>,
+        X: BlockExpansionTrait<P, D>,
     {
         let trajectories_plus = &mut vec![];
         let undo_stack = &mut vec![];
@@ -302,10 +328,13 @@ where
                 }
             }
         }
+        if root.is_solved() {
+            return true;
+        }
         false
     }
 
-    pub(crate) fn start_block<I>(
+    pub(crate) fn start_block(
         &self,
         root: &G::Node,
         state: &mut P::State,
@@ -314,14 +343,14 @@ where
         confidence: Option<u32>, // out of 100
     ) -> u128
     where
-        X: BlockExpansionTrait<P, I> + ExpansionTrait<P, I>,
-        G::Edge: From<I>,
+        X: BlockExpansionTrait<P, D> + ExpansionTrait<P, D>,
         P::Action: Display,
         P::Outcome: Display,
     {
         let start_time = Instant::now();
         let start_count = root.selection_count();
         let mut next_pv = 1;
+        let agent = self.problem.agent_to_act(state);
         let mut worker = || {
             while !self.end_search(start_time, root, node_limit, time_limit, confidence, 32) {
                 if root.selection_count() < 256 {
@@ -343,53 +372,17 @@ where
         start_time.elapsed().as_millis()
     }
 
-    pub(crate) fn start<I>(
-        &self,
-        root: &G::Node,
-        state: &mut P::State,
-        node_limit: Option<u32>,
-        time_limit: Option<u128>,
-        confidence: Option<u32>, // out of 100
-    ) -> u128
-    where
-        X: ExpansionTrait<P, I>,
-        G::Edge: From<I>,
-        P::Action: Display,
-        P::Outcome: Display,
-    {
-        let start_time = Instant::now();
-        let start_count = root.selection_count();
-        let mut next_pv = 1;
-        let mut worker = || {
-            while !self.end_search(start_time, root, node_limit, time_limit, confidence, 32) {
-                for _ in 0..256 {
-                    self.one_iteration(root, state);
-                }
-                let index = start_time.elapsed().as_millis() / 500;
-                if index >= next_pv {
-                    next_pv += 1;
-                    let mut v = vec![];
-                    self.print_pv(root, Some(start_time), Some(start_count), &mut v, 256);
-                }
-            }
-        };
-        worker();
-        start_time.elapsed().as_millis()
-    }
-
-    pub(crate) fn start_parallel<I>(
+    pub(crate) fn start_parallel(
         &self,
         root: &G::Node,
         state: &P::State,
         node_limit: Option<u32>,
         time_limit: Option<u128>,
         confidence: Option<u32>, // out of 100
-        worker_count: u32,
     ) -> u128
     where
         P::State: Clone + Send,
-        X: ExpansionTrait<P, I>,
-        G::Edge: From<I>,
+        X: ExpansionTrait<P, D>,
         P::Action: Display,
         P::Outcome: Display,
         <<P::Outcome as Outcome<P::Agent>>::RewardType as Distance>::NormType: Sync,
@@ -398,11 +391,12 @@ where
         G: Sync,
         S: Sync,
         X: Sync,
+        D: Sync,
     {
         let start_time = Instant::now();
         let start_count = root.selection_count();
         crossbeam::scope(|scope| {
-            for _ in 0..worker_count {
+            for _ in 0..self.worker_count {
                 let mut local_state = state.clone();
                 scope.spawn(move |_| {
                     while !self.end_search(start_time, root, node_limit, time_limit, confidence, 32)
@@ -499,10 +493,11 @@ mod tests {
     fn random() {
         let s = Search::new(
             problem1(),
-            SafeTree::<_, Vec<f32>>::new(),
+            SafeTree::<OnlyAction<_>, _>::new(vec![0.0, 0.0]),
             RandomPolicy,
             BasicExpansion::new(DSim),
             0.01,
+            1,
             1,
         );
 
@@ -519,10 +514,11 @@ mod tests {
     fn uct() {
         let s = Search::new(
             problem1(),
-            SafeTree::<_, Vec<f32>>::new(),
+            SafeTree::<OnlyAction<_>, _>::new(vec![0.0, 0.0]),
             UctPolicy::new(2.4),
             BasicExpansion::new(DSim),
             0.01,
+            1,
             1,
         );
 
@@ -539,10 +535,11 @@ mod tests {
     fn uct_block() {
         let s = Search::new(
             problem1(),
-            SafeTree::<_, Vec<f32>>::new(),
+            SafeTree::<OnlyAction<_>, _>::new(vec![0.0, 0.0]),
             UctPolicy::new(2.4),
             BlockExpansionFromBasic::new(BasicExpansion::new(DSim)),
             0.01,
+            1,
             1,
         );
 
@@ -560,10 +557,11 @@ mod tests {
     fn puct_2p() {
         let s = Search::new(
             problem2(),
-            SafeTree::<ActionWithStaticPolicy<u32>, Vec<f32>>::new(),
+            SafeTree::<ActionWithStaticPolicy<_>, _>::new(vec![0.0, 0.0]),
             PuctPolicy::new(2.0, 2.4),
             BasicExpansionWithUniformPrior::new(DSim),
             0.01,
+            1,
             1,
         );
 
@@ -580,10 +578,11 @@ mod tests {
     fn puct() {
         let s = Search::new(
             problem1(),
-            SafeTree::<ActionWithStaticPolicy<u32>, Vec<f32>>::new(),
+            SafeTree::<ActionWithStaticPolicy<_>, _>::new(vec![0.0, 0.0]),
             PuctPolicy::new(2000.0, 2.4),
             BasicExpansionWithUniformPrior::new(DSim),
             0.01,
+            1,
             1,
         );
 
@@ -600,10 +599,11 @@ mod tests {
     fn c4_test() {
         let s = Search::new(
             C4::new(9, 7),
-            SafeTree::<OnlyAction<_>, Vec<f32>>::new(),
+            SafeTree::<OnlyAction<_>, _>::new(0.0),
             UctPolicy::new(2.4),
             BasicExpansion::new(DefaultSimulator),
             0.01,
+            1,
             1,
         );
         let state = &mut s.problem.start_state();
