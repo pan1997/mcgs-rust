@@ -10,10 +10,12 @@ use crate::lib::mcgs::safe_tree::SafeTree;
 use crate::lib::mcgs::search_graph::{OutcomeStore, SearchGraph, SelectCountStore};
 use crate::lib::mcgs::Search;
 use crate::lib::{ActionWithStaticPolicy, OnlyAction};
+use std::sync::atomic::Ordering;
 use std::time::Instant;
 use text_io::read;
 
 fn main() {
+    /*
     let s = Search::new(
         C4::new(9, 7),
         SafeTree::<ActionWithStaticPolicy<_>, f32>::new(),
@@ -21,16 +23,16 @@ fn main() {
         BasicExpansionWithUniformPrior::new(RandomSimulator),
         0.01,
         1,
-    );
-    /*
+    );*/
+
     let s = Search::new(
         C4::new(9, 7),
         SafeTree::<OnlyAction<_>, f32>::new(),
         UctPolicy::new(2.4),
-        BlockExpansionFromBasic::new(BasicExpansion::new(DefaultSimulator)),
+        BlockExpansionFromBasic::new(BasicExpansion::new(RandomSimulator)),
         0.01,
         1,
-    );*/
+    );
 
     let mut state = s.problem().start_state();
 
@@ -50,9 +52,7 @@ fn main() {
                 println!("{}", state);
                 let time_limit: u128 = read!();
                 let node = s.search_graph().create_node(&state);
-                //let elapsed = s.start_block(&node, &mut state, None, Some(time_limit), Some(97));
-                //let elapsed = s.start(&node, &mut state, None, Some(time_limit), Some(97));
-                let elapsed = s.start_parallel(&node, &state, None, Some(time_limit), Some(97), 1);
+                let elapsed = s.start_parallel(&node, &state, None, Some(time_limit), Some(97), 2);
                 let best_edge = SearchGraph::<()>::get_edge(
                     s.search_graph(),
                     &node,
@@ -64,7 +64,7 @@ fn main() {
                     "BM {} ms {:.0} total_nodes: {}",
                     best_move,
                     score * 100.0,
-                    node.selection_count()
+                    node.selection_count(),
                 );
             }
             _ => (),

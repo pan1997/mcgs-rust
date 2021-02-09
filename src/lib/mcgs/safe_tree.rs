@@ -5,14 +5,12 @@ use crate::lib::mcgs::search_graph::{
 use crate::lib::{ActionWithStaticPolicy, OnlyAction};
 use parking_lot::lock_api::RawMutex;
 use parking_lot::RawMutex as Mutex;
-use parking_lot::RwLock;
 use std::cell::UnsafeCell;
 use std::fmt::{Display, Formatter};
 use std::marker::PhantomData;
 use std::ops::Deref;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
-// TODO: switch to a single raw mutex and cells
 pub struct Node<I> {
     lock: Mutex,
     internal: UnsafeCell<Internal<f32>>,
@@ -71,7 +69,6 @@ impl<I> OutcomeStore<f32> for Edge<I> {
     }
 }
 
-// TODO: see if ordering can be relaxed
 impl<I> SelectCountStore for Node<I> {
     fn selection_count(&self) -> u32 {
         unsafe { &*self.internal.get() }.selection_count
@@ -82,7 +79,6 @@ impl<I> SelectCountStore for Node<I> {
     }
 }
 
-// TODO: see if ordering can be relaxed
 impl<I> SelectCountStore for Edge<I> {
     fn selection_count(&self) -> u32 {
         unsafe { &*self.internal.get() }.selection_count

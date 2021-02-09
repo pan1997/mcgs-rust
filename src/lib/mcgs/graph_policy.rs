@@ -39,7 +39,6 @@ where
             }
         }
         // Returns an invalid edge when all edges have been visited
-        // TODO: do we need to switch to random for this case?
         edge_count
     }
 }
@@ -116,7 +115,6 @@ where
             }
         }
         // Returns an invalid edge when all edges have been visited
-        // TODO: do we need to switch to random for this case?
         best_edge
     }
 }
@@ -175,7 +173,6 @@ where
             }
         }
         // Returns an invalid edge when all edges have been visited
-        // TODO: do we need to switch to random for this case?
         best_edge
     }
 }

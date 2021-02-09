@@ -12,7 +12,7 @@ use crate::lib::mcgs::expansion_traits::{BlockExpansionTrait, ExpansionTrait};
 use std::cmp::min;
 use std::fmt::Display;
 use std::ops::Deref;
-use std::sync::atomic::AtomicU32;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
@@ -108,31 +108,34 @@ where
 
             node.increment_selection_count();
             edge.increment_selection_count();
+
+            let edge_selection_count = edge.selection_count();
             node.unlock();
 
             trajectory.push((node, edge));
             undo_stack.push(self.problem.transition(state, &edge));
 
-            // If this edge is dangling, we create a new node and then return it
-            /*if self.search_graph.is_dangling(edge) {
-                let next_node = self.search_graph.create_target(edge, state);
-                return SelectionResult::Expand(next_node);
-            }*/
             let next_node = self.search_graph.get_target_node(edge);
             next_node.lock();
-            // Check if this is a transposition (next_node has extra samples)
-            let n_count = next_node.sample_count();
-            let e_count = edge.sample_count();
-            if n_count > e_count {
+
+            // Check if this is a transposition (next_node has extra selections)
+            if next_node.selection_count() > edge_selection_count {
+                // TODO: what happens when the next node has no samples...
                 let delta = next_node
                     .expected_outcome()
                     .reward_for_agent(agent)
                     .distance(&edge.expected_outcome().reward_for_agent(agent));
                 if delta > self.q_shorting_bound {
+                    let node_selection_count = next_node.selection_count();
+                    let expected_outcome = next_node.expected_outcome();
+                    next_node.unlock();
                     return SelectionResult::Propagate(
                         next_node,
-                        next_node.expected_outcome(),
-                        min(self.maximum_trajectory_weight, n_count - e_count),
+                        expected_outcome,
+                        min(
+                            self.maximum_trajectory_weight,
+                            node_selection_count - edge_selection_count,
+                        ),
                     );
                 }
             }
@@ -145,7 +148,6 @@ where
 
             node = next_node;
         }
-        //println!("hey.....");
         node.unlock();
         SelectionResult::Expand(node)
     }
@@ -221,7 +223,7 @@ where
         let trajectories_plus = &mut vec![];
         let undo_stack = &mut vec![];
         let mut short_count = 0;
-        while trajectories_plus.len() < size && short_count < size {
+        while trajectories_plus.len() < size && short_count < 2 * size {
             let mut trajectory = vec![];
             let s = self.select(root, state, &mut trajectory, undo_stack);
             match s {
@@ -432,6 +434,7 @@ where
         P::Action: Display,
         P::Outcome: Display,
     {
+        // No locks used here as this fn only reads
         let selection_count = root.selection_count() - start_count.or(Some(0)).unwrap();
         print!("{}kN ", selection_count / 1000);
         if start_time.is_some() {
@@ -448,7 +451,7 @@ where
             let action: &P::Action = &edge;
             if root.selection_count() > filter {
                 print!(
-                    "{{{}, {}k({})%, {:.2}, ",
+                    "{{{}, {}k({})%, {:.2}",
                     action,
                     edge.selection_count() / 1000,
                     edge.selection_count() * 100 / (root.selection_count() + 1), // avoid nast divide by zero
