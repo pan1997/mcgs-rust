@@ -14,6 +14,7 @@ rand_distr = "*"
 parking_lot = "*"
 text_io = "*"
 crossbeam = "*"
+dashmap = "*"
 
 [dependencies.rand]
 version = "*"

@@ -1,3 +1,5 @@
+use std::ops::Deref;
+
 pub trait OutcomeStore<O> {
     fn expected_outcome(&self) -> O;
     fn is_solved(&self) -> bool;
@@ -27,8 +29,10 @@ pub trait PriorPolicyStore {
 pub trait SearchGraph<D, S> {
     type Node;
     type Edge;
+    type NodeRef: Deref<Target=Self::Node>;
 
-    fn create_node(&self, s: &S) -> Box<Self::Node>;
+    fn create_node(&self, s: &S) -> Self::NodeRef;
+    fn clear(&self, s: Self::NodeRef);
 
     fn is_leaf(&self, n: &Self::Node) -> bool;
     fn children_count(&self, n: &Self::Node) -> u32;

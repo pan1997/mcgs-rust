@@ -4,6 +4,7 @@ pub(crate) mod graph_policy;
 mod samples;
 pub(crate) mod search_graph;
 pub(crate) mod tree;
+mod graph;
 
 use graph_policy::*;
 use search_graph::*;

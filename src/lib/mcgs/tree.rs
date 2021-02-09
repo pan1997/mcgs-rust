@@ -132,9 +132,14 @@ impl<D, O> SafeTree<D, O> {
 impl<S, O: Clone, D> SearchGraph<D, S> for SafeTree<D, O> {
     type Node = Node<O, D>;
     type Edge = Edge<O, D>;
+    type NodeRef = Box<Self::Node>;
 
-    fn create_node(&self, _: &S) -> Box<Self::Node> {
+    fn create_node(&self, _: &S) -> Self::NodeRef {
         Box::new(Node::new(self.default_outcome.clone()))
+    }
+
+    fn clear(&self, _: Self::NodeRef) {
+        // no extra op needed
     }
 
     fn is_leaf(&self, n: &Self::Node) -> bool {
