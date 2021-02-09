@@ -1,10 +1,9 @@
-use crate::lib::decision_process::{DecisionProcess, Outcome, WinnableOutcome};
+use crate::lib::decision_process::{DecisionProcess, Outcome};
 use crate::lib::mcgs::search_graph::{
     OutcomeStore, PriorPolicyStore, SearchGraph, SelectCountStore,
 };
 use num::ToPrimitive;
 use rand::{thread_rng, Rng};
-use std::process::exit;
 
 pub trait SelectionPolicy<D, P, G>
 where

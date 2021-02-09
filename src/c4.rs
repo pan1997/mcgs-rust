@@ -8,12 +8,11 @@ use crate::lib::mcgs::expansion_traits::{
 use crate::lib::mcgs::graph_policy::{
     MostVisitedPolicy, PuctPolicy, RandomPolicy, UctPolicy, WeightedRandomPolicyWithExpDepth,
 };
-use crate::lib::mcgs::safe_tree::SafeTree;
 use crate::lib::mcgs::search_graph::{OutcomeStore, SearchGraph, SelectCountStore};
+use crate::lib::mcgs::tree::SafeTree;
 use crate::lib::mcgs::Search;
 use crate::lib::{ActionWithStaticPolicy, OnlyAction};
 use std::sync::atomic::Ordering;
-use std::time::Instant;
 use text_io::read;
 
 fn main() {
@@ -69,10 +68,11 @@ fn main() {
                 let best_move: &Move = best_edge;
                 let score: f32 = node.expected_outcome();
                 println!(
-                    "BM {} ms {:.0} total_nodes: {}",
+                    "BM {} ms {:.0} total_nodes: {} total_time: {}ms",
                     best_move,
                     score * 100.0,
                     node.selection_count(),
+                    elapsed
                 );
             }
             _ => (),

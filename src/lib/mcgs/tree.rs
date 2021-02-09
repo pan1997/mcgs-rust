@@ -1,4 +1,5 @@
-use crate::lib::decision_process::{Outcome, SimpleMovingAverage};
+use crate::lib::decision_process::SimpleMovingAverage;
+use crate::lib::mcgs::common::Internal;
 use crate::lib::mcgs::samples::Samples;
 use crate::lib::mcgs::search_graph::{
     ConcurrentAccess, OutcomeStore, PriorPolicyStore, SearchGraph, SelectCountStore,
@@ -7,10 +8,8 @@ use crate::lib::{ActionWithStaticPolicy, OnlyAction};
 use parking_lot::lock_api::RawMutex;
 use parking_lot::RawMutex as Mutex;
 use std::cell::UnsafeCell;
-use std::fmt::{Debug, Display, Formatter};
 use std::marker::PhantomData;
 use std::ops::Deref;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 pub struct Node<O, I> {
     lock: Mutex,
@@ -37,7 +36,6 @@ impl<O: Clone, I> Edge<O, I> {
 unsafe impl<O, I> Sync for Node<O, I> {}
 
 impl<I, O: Clone + SimpleMovingAverage> OutcomeStore<O> for Node<O, I> {
-
     fn expected_outcome(&self) -> O {
         unsafe { &*self.internal.get() }.expected_sample.clone()
     }
@@ -200,74 +198,9 @@ impl<O, A> PriorPolicyStore for Edge<O, ActionWithStaticPolicy<A>> {
     }
 }
 
-struct Internal<O> {
-    expected_sample: O,
-    sample_count: u32,
-    selection_count: u32,
-}
-
-impl<O> Internal<O> {
-    fn new(outcome: O) -> Self {
-        Internal {
-            expected_sample: outcome,
-            sample_count: 0,
-            selection_count: 0,
-        }
-    }
-
-    fn is_solved(&self) -> bool {
-        self.sample_count == u32::MAX
-    }
-
-    fn mark_solved(&mut self) {
-        self.sample_count = u32::MAX
-    }
-}
-
-impl<O: SimpleMovingAverage> Internal<O> {
-    fn add_sample(&mut self, x: &O, weight: u32) {
-        if !self.is_solved() {
-            self.sample_count += weight;
-            self.expected_sample
-                .update_with_moving_average(x, weight, self.sample_count)
-        }
-    }
-}
-
-impl<O: Display> Display for Internal<O> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{{n_count: {}, score: {:.2}",
-            self.selection_count, self.expected_sample
-        )?;
-        if self.is_solved() {
-            write!(f, "}}")
-        } else {
-            write!(f, ", count: {}", self.sample_count)
-        }
-    }
-}
-
-impl<O: Debug> Debug for Internal<O> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{{n_count: {}, score: {:.2?}",
-            self.selection_count, self.expected_sample
-        )?;
-        if self.is_solved() {
-            write!(f, "}}")
-        } else {
-            write!(f, ", count: {}", self.sample_count)
-        }
-    }
-}
-
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crossbeam::atomic::AtomicCell;
     use std::fmt::{Debug, Display};
 
     #[test]

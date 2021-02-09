@@ -1,8 +1,9 @@
+mod common;
 pub(crate) mod expansion_traits;
 pub(crate) mod graph_policy;
-pub(crate) mod safe_tree;
 mod samples;
 pub(crate) mod search_graph;
+pub(crate) mod tree;
 
 use graph_policy::*;
 use search_graph::*;
@@ -13,7 +14,6 @@ use std::cmp::min;
 use std::fmt::Display;
 use std::marker::PhantomData;
 use std::ops::Deref;
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
@@ -211,7 +211,7 @@ where
                 outcome.update_with_moving_average(
                     &node.expected_outcome(),
                     weight,
-                    (weight + old_weight),
+                    weight + old_weight,
                 )
             }
 
@@ -350,7 +350,6 @@ where
         let start_time = Instant::now();
         let start_count = root.selection_count();
         let mut next_pv = 1;
-        let agent = self.problem.agent_to_act(state);
         let mut worker = || {
             while !self.end_search(start_time, root, node_limit, time_limit, confidence, 32) {
                 if root.selection_count() < 256 {
@@ -485,8 +484,8 @@ mod tests {
     use crate::lib::mcgs::expansion_traits::{
         BasicExpansion, BasicExpansionWithUniformPrior, BlockExpansionFromBasic,
     };
-    use crate::lib::mcgs::safe_tree::tests::print_graph;
-    use crate::lib::mcgs::safe_tree::SafeTree;
+    use crate::lib::mcgs::tree::tests::print_graph;
+    use crate::lib::mcgs::tree::SafeTree;
     use crate::lib::{ActionWithStaticPolicy, OnlyAction};
 
     #[test]

@@ -1,5 +1,4 @@
-use num::{FromPrimitive, Num};
-use std::ops::AddAssign;
+use num::FromPrimitive;
 
 pub trait DecisionProcess {
     type Agent: Copy;
