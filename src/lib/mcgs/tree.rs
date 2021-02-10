@@ -14,13 +14,15 @@ use std::ops::Deref;
 pub struct Node<O, I> {
     lock: Mutex,
     internal: UnsafeCell<Internal<O>>,
-    edges: UnsafeCell<Vec<Edge<O, I>>>,
+    edges: Vec<Edge<O, I>>,
 }
 
 pub struct Edge<O, I> {
     data: I,
+    // Both these can be unsafe cells and we don't need locks, as we piggyback on the locks from
+    // the parent
     internal: UnsafeCell<Internal<O>>,
-    node: Node<O, I>,
+    node: UnsafeCell<Option<Node<O, I>>>,
 }
 
 impl<O: Clone, I> Edge<O, I> {
@@ -28,7 +30,7 @@ impl<O: Clone, I> Edge<O, I> {
         Edge {
             data: i,
             internal: UnsafeCell::new(Internal::new(outcome.clone())),
-            node: Node::new(outcome),
+            node: UnsafeCell::new(None),
         }
     }
 }
@@ -129,13 +131,37 @@ impl<D, O> SafeTree<D, O> {
     }
 }
 
-impl<S, O: Clone, D> SearchGraph<D, S> for SafeTree<D, O> {
+impl<O: Clone, D> SearchGraph<D, ()> for SafeTree<D, O> {
     type Node = Node<O, D>;
     type Edge = Edge<O, D>;
     type NodeRef = Box<Self::Node>;
 
-    fn create_node(&self, _: &S) -> Self::NodeRef {
-        Box::new(Node::new(self.default_outcome.clone()))
+    fn create_node<L: Iterator<Item = D>>(&self, _: (), l: L) -> Self::NodeRef {
+        Box::new(Node::new(
+            self.default_outcome.clone(),
+            l.map(|i| Edge::new(i, self.default_outcome.clone()))
+                .collect(),
+        ))
+    }
+
+    fn add_child<'a, L: Iterator<Item = D>>(
+        &self,
+        _: (),
+        e: &'a Self::Edge,
+        l: L,
+    ) -> &'a Self::Node {
+        unsafe {
+            let no = &mut *e.node.get();
+            if no.is_none() {
+                // Do not replace if the node already exists
+                no.replace(Node::new(
+                    self.default_outcome.clone(),
+                    l.map(|i| Edge::new(i, self.default_outcome.clone()))
+                        .collect(),
+                ));
+            }
+            no.as_ref().unwrap()
+        }
     }
 
     fn clear(&self, _: Self::NodeRef) {
@@ -143,13 +169,14 @@ impl<S, O: Clone, D> SearchGraph<D, S> for SafeTree<D, O> {
     }
 
     fn is_leaf(&self, n: &Self::Node) -> bool {
-        unsafe { &*n.edges.get() }.is_empty()
+        n.edges.is_empty()
     }
 
     fn children_count(&self, n: &Self::Node) -> u32 {
-        unsafe { &*n.edges.get() }.len() as u32
+        n.edges.len() as u32
     }
 
+    /*
     fn create_children<L: Iterator<Item = D>>(&self, n: &Self::Node, l: L) {
         let children = unsafe { &mut *n.edges.get() };
         if children.is_empty() {
@@ -157,26 +184,27 @@ impl<S, O: Clone, D> SearchGraph<D, S> for SafeTree<D, O> {
                 children.push(Self::Edge::new(e, self.default_outcome.clone()));
             }
         }
-    }
+    }*/
 
     fn get_edge<'a>(&self, n: &'a Self::Node, ix: u32) -> &'a Self::Edge {
-        unsafe {
-            let r = unsafe { &*n.edges.get() };
-            r.get_unchecked(ix as usize)
-        }
+        n.edges.get(ix as usize).unwrap()
+    }
+
+    fn is_dangling(&self, e: &Self::Edge) -> bool {
+        unsafe { &*e.node.get() }.is_none()
     }
 
     fn get_target_node<'a>(&self, e: &'a Self::Edge) -> &'a Self::Node {
-        &e.node
+        unsafe { &*e.node.get() }.as_ref().unwrap()
     }
 }
 
 impl<O, I> Node<O, I> {
-    fn new(outcome: O) -> Self {
+    fn new(outcome: O, edges: Vec<Edge<O, I>>) -> Self {
         Node {
             lock: RawMutex::INIT,
             internal: UnsafeCell::new(Internal::new(outcome)),
-            edges: UnsafeCell::new(vec![]),
+            edges,
         }
     }
 }
@@ -230,11 +258,7 @@ pub(crate) mod tests {
         offset: u32,
         full: bool,
     ) {
-        println!(
-            "node: {{s_count: {}, score: {:?}}}",
-            n.selection_count(),
-            unsafe { &*n.internal.get() }
-        );
+        println!("node: {{internal: {:?}}}", unsafe { &*n.internal.get() });
         if n.selection_count() > 0 {
             for e in 0..SearchGraph::<_, ()>::children_count(ns, n) {
                 for _ in 0..offset {
@@ -242,13 +266,10 @@ pub(crate) mod tests {
                 }
                 print!("|-");
                 let edge = SearchGraph::<_, ()>::get_edge(ns, n, e);
-                print!(
-                    "-> {{data: {}, s_count: {}}} ",
-                    edge.data,
-                    edge.selection_count(),
-                    //Edge::<D>::expected_outcome(edge)
-                );
-                if !full {
+                print!("-> {{data: {}, internal: {:?}}} ", edge.data, unsafe {
+                    &*edge.internal.get()
+                });
+                if !full || SearchGraph::<_, ()>::is_dangling(ns, edge) {
                     println!("-> !");
                 } else {
                     print_graph(

@@ -1,26 +1,30 @@
 mod common;
 pub(crate) mod expansion_traits;
+pub(crate) mod graph;
 pub(crate) mod graph_policy;
 mod samples;
 pub(crate) mod search_graph;
 pub(crate) mod tree;
-mod graph;
 
 use graph_policy::*;
 use search_graph::*;
 
 use crate::lib::decision_process::{DecisionProcess, Distance, Outcome, SimpleMovingAverage};
 use crate::lib::mcgs::expansion_traits::{BlockExpansionTrait, ExpansionTrait};
+use crate::lib::mcgs::graph::Hsh;
+use crate::lib::mcgs::SelectionResult::Expand;
 use std::cmp::min;
 use std::fmt::Display;
 use std::marker::PhantomData;
 use std::ops::Deref;
 use std::thread::sleep;
 use std::time::{Duration, Instant};
+use std::process::exit;
 
-pub struct ExpansionResult<O, EI> {
+pub struct ExpansionResult<O, EI, K> {
+    state_key: K,
     outcome: O,
-    prune: bool,
+    // To prune, the returned edges iterator needs to be empty now
     edges: EI,
 }
 
@@ -37,38 +41,41 @@ pub struct ExpansionResult<O, EI> {
 /// implementation and avoids expensive safeguards to enable safe sharing of the search tree
 /// among multiple workers.
 
-pub struct Search<P, S, R, G, X, D> {
+pub struct Search<P, S, R, G, X, D, H> {
     problem: P,
     search_graph: G,
     selection_policy: S,
     expand_operation: X,
+    state_hasher: H,
     q_shorting_bound: R,
     maximum_trajectory_weight: u32,
     worker_count: u32,
     phantom: PhantomData<D>,
 }
 
-enum SelectionResult<N, V> {
-    Expand(N),
+enum SelectionResult<N, E, V> {
+    Expand(E),
     Propagate(N, V, u32), // The second arg is the weight
 }
 
-impl<P, S, G, X, D>
-    Search<P, S, <<P::Outcome as Outcome<P::Agent>>::RewardType as Distance>::NormType, G, X, D>
+impl<P, S, G, X, D, H>
+    Search<P, S, <<P::Outcome as Outcome<P::Agent>>::RewardType as Distance>::NormType, G, X, D, H>
 where
     P: DecisionProcess,
-    G: SearchGraph<D, P::State>,
-    S: SelectionPolicy<D, P, G>,
+    G: SearchGraph<D, H::K>,
+    S: SelectionPolicy<D, P, G, H::K>,
     G::Node: SelectCountStore + OutcomeStore<P::Outcome> + ConcurrentAccess,
     G::Edge: SelectCountStore + OutcomeStore<P::Outcome> + Deref<Target = P::Action>,
     <P::Outcome as Outcome<P::Agent>>::RewardType: Distance,
     P::Outcome: SimpleMovingAverage,
+    H: Hsh<P::State>,
 {
     pub(crate) fn new(
         problem: P,
         search_graph: G,
         selection_policy: S,
         expand_operation: X,
+        state_hasher: H,
         q_shorting_bound: <<P::Outcome as Outcome<P::Agent>>::RewardType as Distance>::NormType,
         maximum_trajectory_weight: u32,
         worker_count: u32,
@@ -78,6 +85,7 @@ where
             search_graph,
             selection_policy,
             expand_operation,
+            state_hasher,
             q_shorting_bound,
             maximum_trajectory_weight,
             worker_count,
@@ -93,6 +101,17 @@ where
         &self.problem
     }
 
+    pub fn get_new_node(&self, state: &mut P::State) -> G::NodeRef
+    where
+        X: ExpansionTrait<P, D, H::K>,
+    {
+        let key = self.state_hasher.key(state);
+        let x = self.expand_operation.apply(&self.problem, state, key);
+        //assert!(!x.prune);
+        let k = self.state_hasher.key(state);
+        self.search_graph.create_node(k, x.edges)
+    }
+
     pub(crate) fn search_graph(&self) -> &G {
         &self.search_graph
     }
@@ -106,7 +125,7 @@ where
         state: &mut P::State,
         trajectory: &mut Vec<(&'a G::Node, &'a G::Edge)>,
         undo_stack: &mut Vec<P::UndoAction>,
-    ) -> SelectionResult<&'a G::Node, P::Outcome> {
+    ) -> SelectionResult<&'a G::Node, &'a G::Edge, P::Outcome> {
         let mut node = root;
         node.lock();
         while !self.search_graph.is_leaf(node) {
@@ -122,22 +141,30 @@ where
             edge.increment_selection_count();
 
             let edge_selection_count = edge.selection_count();
-            node.unlock();
 
             trajectory.push((node, edge));
             undo_stack.push(self.problem.transition(state, &edge));
 
+            if self.search_graph.is_dangling(edge) {
+                node.unlock();
+                return Expand(edge);
+            }
+
+            node.unlock();
             let next_node = self.search_graph.get_target_node(edge);
             next_node.lock();
 
             // Check if this is a transposition (next_node has extra selections)
             if next_node.selection_count() > edge_selection_count {
+                // TODO: this has bugs
+                //println!("transposition in sel");
                 // TODO: what happens when the next node has no samples...
                 let delta = next_node
                     .expected_outcome()
                     .reward_for_agent(agent)
                     .distance(&edge.expected_outcome().reward_for_agent(agent));
                 if delta > self.q_shorting_bound {
+                    println!("Shorting");
                     let node_selection_count = next_node.selection_count();
                     let expected_outcome = next_node.expected_outcome();
                     next_node.unlock();
@@ -160,26 +187,39 @@ where
 
             node = next_node;
         }
+        // This is needed
+        node.increment_selection_count();
         node.unlock();
-        SelectionResult::Expand(node)
+        SelectionResult::Propagate(node, node.expected_outcome(), 1)
     }
 
     fn expand<'a>(
         &self,
         node: &'a G::Node,
+        edge: &'a G::Edge,
         state: &mut P::State,
-    ) -> (&'a G::Node, P::Outcome, u32, bool)
+    ) -> (&'a G::Node, P::Outcome, u32)
     where
-        X: ExpansionTrait<P, D>,
+        X: ExpansionTrait<P, D, H::K>,
     {
-        let expansion_result = self.expand_operation.apply(&self.problem, state);
-        if !expansion_result.prune {
-            node.lock();
+        let expansion_result =
+            self.expand_operation
+                .apply(&self.problem, state, self.state_hasher.key(state));
+        node.lock();
+        // no problem with locking
+        let new_node =
             self.search_graph
-                .create_children(node, expansion_result.edges);
-            node.unlock();
+                .add_child(expansion_result.state_key, edge, expansion_result.edges);
+        node.unlock();
+        // TODO: this might create races
+        new_node.lock();
+        new_node.add_sample(&expansion_result.outcome, 1);
+        if self.search_graph.is_leaf(new_node) {
+            new_node.mark_solved()
         }
-        (node, expansion_result.outcome, 1, expansion_result.prune)
+        new_node.increment_selection_count();
+        new_node.unlock();
+        (new_node, expansion_result.outcome, 1)
     }
 
     fn propagate(
@@ -188,22 +228,24 @@ where
         node: &G::Node,
         mut outcome: P::Outcome,
         mut weight: u32,
-        prune: bool,
     ) {
-        node.lock();
-        let mut child_sample_count = node.sample_count();
-        node.add_sample(&outcome, weight);
-        if prune {
-            node.mark_solved();
-        }
-        node.unlock();
+        //node.lock();
+        //let mut child_sample_count = node.sample_count();
+        //node.add_sample(&outcome, weight);
+        //if self.search_graph.is_leaf(node) {
+            // Not a problem with marking a node solved again
+        //    node.mark_solved();
+        //}
+        //node.unlock();
         // TODO: add graph propogation
         while let Some((node, edge)) = trajectory.pop() {
             node.lock();
-            let edge_sample_count = edge.sample_count();
+            //let edge_sample_count = edge.sample_count();
+            /*
             // The child node is a transposition
             if child_sample_count > edge_sample_count {
                 // TODO: fix
+                println!("transposition");
                 let old_weight = weight;
                 weight = min(
                     child_sample_count - edge_sample_count,
@@ -215,9 +257,9 @@ where
                     weight + old_weight,
                 )
             }
-
+            */
             edge.add_sample(&outcome, weight);
-            child_sample_count = node.sample_count();
+            //child_sample_count = node.sample_count();
             node.add_sample(&outcome, weight);
             node.unlock();
         }
@@ -225,27 +267,30 @@ where
 
     pub(crate) fn one_iteration(&self, root: &G::Node, state: &mut P::State)
     where
-        X: ExpansionTrait<P, D>,
+        X: ExpansionTrait<P, D, H::K>,
     {
         let trajectory = &mut vec![];
         let undo_stack = &mut vec![];
         let s = self.select(root, state, trajectory, undo_stack);
 
-        let (node, outcome, weight, prune) = match s {
-            SelectionResult::Expand(n) => self.expand(n, state),
-            SelectionResult::Propagate(node, outcome, weight) => (node, outcome, weight, false),
+        let (node, outcome, weight) = match s {
+            SelectionResult::Expand(e) => {
+                let (n, e) = trajectory.last().unwrap();
+                self.expand(*n, *e, state)
+            }
+            SelectionResult::Propagate(node, outcome, weight) => (node, outcome, weight),
         };
 
         while let Some(u) = undo_stack.pop() {
             self.problem.undo_transition(state, u);
         }
 
-        self.propagate(trajectory, node, outcome, weight, prune);
+        self.propagate(trajectory, node, outcome, weight);
     }
 
     fn one_block(&self, root: &G::Node, state: &mut P::State, size: usize)
     where
-        X: BlockExpansionTrait<P, D>,
+        X: BlockExpansionTrait<P, D, H::K>,
     {
         let trajectories_plus = &mut vec![];
         let undo_stack = &mut vec![];
@@ -255,13 +300,17 @@ where
             let s = self.select(root, state, &mut trajectory, undo_stack);
             match s {
                 SelectionResult::Propagate(node, outcome, weight) => {
-                    self.propagate(&mut trajectory, node, outcome, weight, false);
+                    self.propagate(&mut trajectory, node, outcome, weight);
                     short_count += 1;
                 }
                 SelectionResult::Expand(node) => trajectories_plus.push((
                     trajectory,
                     node,
-                    self.expand_operation.accept(&self.problem, state),
+                    self.expand_operation.accept(
+                        &self.problem,
+                        state,
+                        self.state_hasher.key(state),
+                    ),
                 )),
             }
             while let Some(u) = undo_stack.pop() {
@@ -277,18 +326,15 @@ where
         }
 
         for (expansion_result, trajectory_index) in expansion_results.into_iter().zip(inverse_map) {
-            let (trajectory, node, _) = &mut trajectories_plus[trajectory_index];
-            if !expansion_result.prune {
+            let (trajectory, edge, _) = &mut trajectories_plus[trajectory_index];
+
+            let (n, e) = trajectory.last().unwrap();
+            let node =
                 self.search_graph
-                    .create_children(node, expansion_result.edges);
-            }
-            self.propagate(
-                trajectory,
-                node,
-                expansion_result.outcome,
-                1,
-                expansion_result.prune,
-            );
+                    .add_child(expansion_result.state_key, e, expansion_result.edges);
+            //self.search_graph
+            //    .create_children(node, expansion_result.edges);
+            self.propagate(trajectory, node, expansion_result.outcome, 1);
         }
     }
 
@@ -344,7 +390,7 @@ where
         confidence: Option<u32>, // out of 100
     ) -> u128
     where
-        X: BlockExpansionTrait<P, D> + ExpansionTrait<P, D>,
+        X: BlockExpansionTrait<P, D, H::K> + ExpansionTrait<P, D, H::K>,
         P::Action: Display,
         P::Outcome: Display,
     {
@@ -382,7 +428,7 @@ where
     ) -> u128
     where
         P::State: Clone + Send,
-        X: ExpansionTrait<P, D>,
+        X: ExpansionTrait<P, D, H::K>,
         P::Action: Display,
         P::Outcome: Display,
         <<P::Outcome as Outcome<P::Agent>>::RewardType as Distance>::NormType: Sync,
@@ -392,6 +438,7 @@ where
         S: Sync,
         X: Sync,
         D: Sync,
+        H: Sync,
     {
         let start_time = Instant::now();
         let start_count = root.selection_count();
@@ -466,11 +513,11 @@ where
     }
 }
 
-impl<O: Clone, EI: Clone> Clone for ExpansionResult<O, EI> {
+impl<K: Clone, O: Clone, EI: Clone> Clone for ExpansionResult<K, O, EI> {
     fn clone(&self) -> Self {
         ExpansionResult {
+            state_key: self.state_key.clone(),
             outcome: self.outcome.clone(),
-            prune: self.prune,
             edges: self.edges.clone(),
         }
     }
@@ -485,6 +532,7 @@ mod tests {
     use crate::lib::mcgs::expansion_traits::{
         BasicExpansion, BasicExpansionWithUniformPrior, BlockExpansionFromBasic,
     };
+    use crate::lib::mcgs::graph::NoHash;
     use crate::lib::mcgs::tree::tests::print_graph;
     use crate::lib::mcgs::tree::SafeTree;
     use crate::lib::{ActionWithStaticPolicy, OnlyAction};
@@ -496,13 +544,14 @@ mod tests {
             SafeTree::<OnlyAction<_>, _>::new(vec![0.0, 0.0]),
             RandomPolicy,
             BasicExpansion::new(DSim),
+            NoHash,
             0.01,
             1,
             1,
         );
 
         let state = &mut s.problem.start_state();
-        let n = s.search_graph.create_node(state);
+        let n = s.get_new_node(state);
         print_graph(&s.search_graph, &n, 0, true);
         for _ in 0..10 {
             s.one_iteration(&n, state);
@@ -517,13 +566,14 @@ mod tests {
             SafeTree::<OnlyAction<_>, _>::new(vec![0.0, 0.0]),
             UctPolicy::new(2.4),
             BasicExpansion::new(DSim),
+            NoHash,
             0.01,
             1,
             1,
         );
 
         let state = &mut s.problem.start_state();
-        let n = s.search_graph.create_node(state);
+        let n = s.get_new_node(state);
         print_graph(&s.search_graph, &n, 0, true);
         for _ in 0..100 {
             s.one_iteration(&n, state);
@@ -538,19 +588,19 @@ mod tests {
             SafeTree::<OnlyAction<_>, _>::new(vec![0.0, 0.0]),
             UctPolicy::new(2.4),
             BlockExpansionFromBasic::new(BasicExpansion::new(DSim)),
+            NoHash,
             0.01,
             1,
             1,
         );
 
         let state = &mut s.problem.start_state();
-        let n = s.search_graph.create_node(state);
+        let n = s.get_new_node(state);
         print_graph(&s.search_graph, &n, 0, true);
         for _ in 0..20 {
             s.one_block(&n, state, 5);
             print_graph(&s.search_graph, &n, 0, true);
         }
-        s.search_graph.create_node(state);
     }
 
     #[test]
@@ -560,13 +610,14 @@ mod tests {
             SafeTree::<ActionWithStaticPolicy<_>, _>::new(vec![0.0, 0.0]),
             PuctPolicy::new(2.0, 2.4),
             BasicExpansionWithUniformPrior::new(DSim),
+            NoHash,
             0.01,
             1,
             1,
         );
 
         let state = &mut s.problem.start_state();
-        let n = s.search_graph.create_node(state);
+        let n = s.get_new_node(state);
         print_graph(&s.search_graph, &n, 0, true);
         for _ in 0..100 {
             s.one_iteration(&n, state);
@@ -581,13 +632,14 @@ mod tests {
             SafeTree::<ActionWithStaticPolicy<_>, _>::new(vec![0.0, 0.0]),
             PuctPolicy::new(2000.0, 2.4),
             BasicExpansionWithUniformPrior::new(DSim),
+            NoHash,
             0.01,
             1,
             1,
         );
 
         let state = &mut s.problem.start_state();
-        let n = s.search_graph.create_node(state);
+        let n = s.get_new_node(state);
         print_graph(&s.search_graph, &n, 0, true);
         for _ in 0..100 {
             s.one_iteration(&n, state);
@@ -602,12 +654,13 @@ mod tests {
             SafeTree::<OnlyAction<_>, _>::new(0.0),
             UctPolicy::new(2.4),
             BasicExpansion::new(DefaultSimulator),
+            NoHash,
             0.01,
             1,
             1,
         );
         let state = &mut s.problem.start_state();
-        let n = s.search_graph.create_node(state);
+        let n = s.get_new_node(state);
         print_graph(&s.search_graph, &n, 0, true);
         for _ in 0..1000 {
             s.one_iteration(&n, state);

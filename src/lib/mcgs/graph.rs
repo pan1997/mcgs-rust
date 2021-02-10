@@ -1,35 +1,35 @@
-
-
+use crate::lib::decision_process::SimpleMovingAverage;
+use crate::lib::mcgs::common::Internal;
+use crate::lib::mcgs::search_graph::{
+    ConcurrentAccess, OutcomeStore, PriorPolicyStore, SearchGraph, SelectCountStore,
+};
+use crate::lib::{ActionWithStaticPolicy, OnlyAction};
+use dashmap::DashMap;
 use parking_lot::lock_api::RawMutex;
 use parking_lot::RawMutex as Mutex;
-use std::cell::{UnsafeCell, RefCell};
-use crate::lib::mcgs::common::Internal;
-use std::sync::Arc;
-use crate::lib::mcgs::search_graph::{OutcomeStore, SelectCountStore, ConcurrentAccess, SearchGraph, PriorPolicyStore};
-use crate::lib::decision_process::SimpleMovingAverage;
-use dashmap::DashMap;
+use std::cell::{RefCell, UnsafeCell};
 use std::hash::Hash;
 use std::ops::Deref;
-use crate::lib::{OnlyAction, ActionWithStaticPolicy};
+use std::sync::Arc;
 
 pub struct Node<O, I> {
     lock: Mutex,
     internal: UnsafeCell<Internal<O>>,
-    edges: UnsafeCell<Vec<Edge<O, I>>>,
+    edges: Vec<Edge<O, I>>,
 }
 
 pub struct Edge<O, I> {
     data: I,
     internal: UnsafeCell<Internal<O>>,
-    node: Arc<Node<O, I>>,
+    node: UnsafeCell<Option<Arc<Node<O, I>>>>,
 }
 
 impl<O: Clone, I> Edge<O, I> {
-    fn new(i: I, outcome: O, child: Arc<Node<O, I>>) -> Self {
+    fn new(i: I, outcome: O) -> Self {
         Edge {
             data: i,
             internal: UnsafeCell::new(Internal::new(outcome.clone())),
-            node: child.clone(),
+            node: UnsafeCell::new(None),
         }
     }
 }
@@ -118,7 +118,7 @@ impl<O, I> ConcurrentAccess for Edge<O, I> {
 
 pub struct SafeGraph<H: Eq + Hash, D, O> {
     default_outcome: O,
-    nodes: DashMap<H, Arc<Node<O, D>>>
+    nodes: DashMap<H, Arc<Node<O, D>>>,
 }
 
 impl<H: Eq + Hash, D, O> SafeGraph<H, D, O> {
@@ -126,30 +126,48 @@ impl<H: Eq + Hash, D, O> SafeGraph<H, D, O> {
         // TODO: set capacity
         SafeGraph {
             default_outcome: outcome,
-            nodes: DashMap::new()
+            nodes: DashMap::new(),
         }
     }
 }
 
-pub trait Keyable<K> {
-    fn key(&self) -> K;
+pub trait Hsh<S> {
+    type K;
+    fn key(&self, s: &S) -> Self::K;
 }
 
-impl<H: Eq + Hash, S: Keyable<H>, O:Clone, D> SearchGraph<D, S> for SafeGraph<H, D, O> {
+pub struct NoHash;
+impl<S> Hsh<S> for NoHash {
+    type K = ();
+    fn key(&self, _: &S) -> () {}
+}
+
+impl<H: Eq + Hash, O: Clone, D> SearchGraph<D, H> for SafeGraph<H, D, O> {
     type Node = Node<O, D>;
     type Edge = Edge<O, D>;
     type NodeRef = Arc<Self::Node>;
 
-    fn create_node(&self, s: &S) -> Self::NodeRef {
-        let key = s.key();
-        let opt = self.nodes.get(&key);
+    fn create_node<L: Iterator<Item = D>>(&self, s: H, l: L) -> Self::NodeRef {
+        let opt = self.nodes.get(&s);
         if opt.is_none() {
-            let n = Arc::new(Node::new(self.default_outcome.clone()));
-            self.nodes.insert(key, n.clone()).unwrap();
+            let edges = l
+                .map(|e| Edge::new(e, self.default_outcome.clone()))
+                .collect();
+            let n = Arc::new(Node::new(self.default_outcome.clone(), edges));
+            self.nodes.insert(s, n.clone()).unwrap();
             n
         } else {
             opt.unwrap().clone()
         }
+    }
+
+    fn add_child<'a, L: Iterator<Item = D>>(
+        &self,
+        s: H,
+        e: &'a Self::Edge,
+        l: L,
+    ) -> &'a Self::Node {
+        unimplemented!()
     }
 
     fn clear(&self, _: Self::NodeRef) {
@@ -157,35 +175,32 @@ impl<H: Eq + Hash, S: Keyable<H>, O:Clone, D> SearchGraph<D, S> for SafeGraph<H,
     }
 
     fn is_leaf(&self, n: &Self::Node) -> bool {
-        unsafe { &*n.edges.get() }.is_empty()
+        n.edges.is_empty()
     }
 
     fn children_count(&self, n: &Self::Node) -> u32 {
-        unsafe { &*n.edges.get() }.len() as u32
-    }
-
-    fn create_children<L: Iterator<Item=D>>(&self, n: &Self::Node, l: L) {
-        unimplemented!()
+        n.edges.len() as u32
     }
 
     fn get_edge<'a>(&self, n: &'a Self::Node, ix: u32) -> &'a Self::Edge {
-        unsafe {
-            let r = unsafe { &*n.edges.get() };
-            r.get_unchecked(ix as usize)
-        }
+        n.edges.get(ix as usize).unwrap()
+    }
+
+    fn is_dangling(&self, e: &Self::Edge) -> bool {
+        unsafe { &*e.node.get() }.is_none()
     }
 
     fn get_target_node<'a>(&self, e: &'a Self::Edge) -> &'a Self::Node {
-        &e.node
+        unsafe { &*e.node.get() }.as_ref().unwrap()
     }
 }
 
 impl<O, I> Node<O, I> {
-    fn new(outcome: O) -> Self {
+    fn new(outcome: O, e: Vec<Edge<O, I>>) -> Self {
         Node {
             lock: RawMutex::INIT,
             internal: UnsafeCell::new(Internal::new(outcome)),
-            edges: UnsafeCell::new(vec![]),
+            edges: e,
         }
     }
 }

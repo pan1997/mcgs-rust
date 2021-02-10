@@ -39,13 +39,13 @@ impl<O: Display> Display for Internal<O> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{{n_count: {}, score: {:.2}",
+            "{{sel_count: {}, score: {:.2}",
             self.selection_count, self.expected_sample
         )?;
         if self.is_solved() {
             write!(f, "}}")
         } else {
-            write!(f, ", count: {}", self.sample_count)
+            write!(f, ", sam_count: {}", self.sample_count)
         }
     }
 }
@@ -54,13 +54,13 @@ impl<O: Debug> Debug for Internal<O> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{{n_count: {}, score: {:.2?}",
+            "{{sel_count: {}, score: {:.2?}",
             self.selection_count, self.expected_sample
         )?;
         if self.is_solved() {
-            write!(f, "}}")
+            write!(f, ", solid}}")
         } else {
-            write!(f, ", count: {}", self.sample_count)
+            write!(f, ", sam_count: {}", self.sample_count)
         }
     }
 }

@@ -26,19 +26,22 @@ pub trait PriorPolicyStore {
     fn prior_policy_score(&self) -> f32;
 }
 
-pub trait SearchGraph<D, S> {
+pub trait SearchGraph<D, H> {
     type Node;
     type Edge;
-    type NodeRef: Deref<Target=Self::Node>;
+    type NodeRef: Deref<Target = Self::Node>;
 
-    fn create_node(&self, s: &S) -> Self::NodeRef;
-    fn clear(&self, s: Self::NodeRef);
+    fn create_node<L: Iterator<Item = D>>(&self, h: H, l: L) -> Self::NodeRef;
+    fn add_child<'a, L: Iterator<Item = D>>(&self, h: H, e: &'a Self::Edge, l: L)
+        -> &'a Self::Node;
+    fn clear(&self, n: Self::NodeRef);
 
     fn is_leaf(&self, n: &Self::Node) -> bool;
     fn children_count(&self, n: &Self::Node) -> u32;
     // need some kind of structural lock on the node (or a atomic state)
-    fn create_children<L: Iterator<Item = D>>(&self, n: &Self::Node, l: L);
+    //fn create_children<L: Iterator<Item = D>>(&self, n: &Self::Node, l: L);
 
     fn get_edge<'a>(&self, n: &'a Self::Node, ix: u32) -> &'a Self::Edge;
+    fn is_dangling(&self, e: &Self::Edge) -> bool;
     fn get_target_node<'a>(&self, e: &'a Self::Edge) -> &'a Self::Node;
 }

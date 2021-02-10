@@ -5,9 +5,9 @@ use crate::lib::mcgs::search_graph::{
 use num::ToPrimitive;
 use rand::{thread_rng, Rng};
 
-pub trait SelectionPolicy<D, P, G>
+pub trait SelectionPolicy<D, P, G, H>
 where
-    G: SearchGraph<D, P::State>,
+    G: SearchGraph<D, H>,
     P: DecisionProcess,
 {
     //TODO: see if we can return the edge ref
@@ -15,7 +15,7 @@ where
 }
 
 pub struct RandomPolicy;
-impl<D, P: DecisionProcess, G: SearchGraph<D, P::State>> SelectionPolicy<D, P, G> for RandomPolicy {
+impl<D, P: DecisionProcess, G: SearchGraph<D, H>, H> SelectionPolicy<D, P, G, H> for RandomPolicy {
     fn select(&self, _: &P, store: &G, node: &G::Node, _: P::Agent, _: u32) -> u32 {
         let k = store.children_count(node);
         debug_assert!(k > 0);
@@ -24,10 +24,10 @@ impl<D, P: DecisionProcess, G: SearchGraph<D, P::State>> SelectionPolicy<D, P, G
 }
 
 struct FirstNonVisitedPolicy;
-impl<D, P, G> SelectionPolicy<D, P, G> for FirstNonVisitedPolicy
+impl<D, P, G, H> SelectionPolicy<D, P, G, H> for FirstNonVisitedPolicy
 where
     P: DecisionProcess,
-    G: SearchGraph<D, P::State>,
+    G: SearchGraph<D, H>,
     G::Edge: SelectCountStore,
 {
     fn select(&self, _: &P, store: &G, node: &G::Node, _: P::Agent, _: u32) -> u32 {
@@ -45,10 +45,10 @@ where
 
 pub struct MostVisitedPolicy;
 impl MostVisitedPolicy {
-    pub(crate) fn select<D, P, G>(&self, _: &P, store: &G, node: &G::Node) -> u32
+    pub(crate) fn select<D, P, G, H>(&self, _: &P, store: &G, node: &G::Node) -> u32
     where
         P: DecisionProcess,
-        G: SearchGraph<D, P::State>,
+        G: SearchGraph<D, H>,
         G::Edge: SelectCountStore,
     {
         let edge_count = store.children_count(node);
@@ -78,10 +78,10 @@ impl UctPolicy {
     }
 }
 
-impl<D, P, G> SelectionPolicy<D, P, G> for UctPolicy
+impl<D, P, G, H> SelectionPolicy<D, P, G, H> for UctPolicy
 where
     P: DecisionProcess,
-    G: SearchGraph<D, P::State>,
+    G: SearchGraph<D, H>,
     G::Edge: SelectCountStore + OutcomeStore<P::Outcome>,
     G::Node: SelectCountStore,
     <P::Outcome as Outcome<P::Agent>>::RewardType: ToPrimitive,
@@ -132,10 +132,10 @@ impl PuctPolicy {
     }
 }
 
-impl<D, P, G> SelectionPolicy<D, P, G> for PuctPolicy
+impl<D, P, G, H> SelectionPolicy<D, P, G, H> for PuctPolicy
 where
     P: DecisionProcess,
-    G: SearchGraph<D, P::State>,
+    G: SearchGraph<D, H>,
     G::Edge: SelectCountStore + OutcomeStore<P::Outcome> + PriorPolicyStore,
     G::Node: SelectCountStore,
     <P::Outcome as Outcome<P::Agent>>::RewardType: ToPrimitive,
@@ -182,12 +182,12 @@ struct WeightedRandomPolicy<P1, P2> {
     epsilon: f32,
 }
 
-impl<D, P, G, P1, P2> SelectionPolicy<D, P, G> for WeightedRandomPolicy<P1, P2>
+impl<D, P, G, P1, P2, H> SelectionPolicy<D, P, G, H> for WeightedRandomPolicy<P1, P2>
 where
-    G: SearchGraph<D, P::State>,
+    G: SearchGraph<D, H>,
     P: DecisionProcess,
-    P1: SelectionPolicy<D, P, G>,
-    P2: SelectionPolicy<D, P, G>,
+    P1: SelectionPolicy<D, P, G, H>,
+    P2: SelectionPolicy<D, P, G, H>,
 {
     fn select(&self, problem: &P, store: &G, node: &G::Node, agent: P::Agent, depth: u32) -> u32 {
         let w: f32 = thread_rng().gen();
@@ -215,12 +215,12 @@ impl<P1, P2> WeightedRandomPolicyWithExpDepth<P1, P2> {
         }
     }
 }
-impl<D, P, G, P1, P2> SelectionPolicy<D, P, G> for WeightedRandomPolicyWithExpDepth<P1, P2>
+impl<D, P, G, P1, P2, H> SelectionPolicy<D, P, G, H> for WeightedRandomPolicyWithExpDepth<P1, P2>
 where
-    G: SearchGraph<D, P::State>,
+    G: SearchGraph<D, H>,
     P: DecisionProcess,
-    P1: SelectionPolicy<D, P, G>,
-    P2: SelectionPolicy<D, P, G>,
+    P1: SelectionPolicy<D, P, G, H>,
+    P2: SelectionPolicy<D, P, G, H>,
 {
     fn select(&self, problem: &P, store: &G, node: &G::Node, agent: P::Agent, depth: u32) -> u32 {
         let w: f32 = thread_rng().gen();

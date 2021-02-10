@@ -3,19 +3,20 @@ use crate::lib::mcgs::ExpansionResult;
 use crate::lib::{ActionWithStaticPolicy, OnlyAction};
 use parking_lot::Mutex;
 
-pub trait ExpansionTrait<P: DecisionProcess, I> {
+pub trait ExpansionTrait<P: DecisionProcess, I, K> {
     type OutputIter: Iterator<Item = I>;
     fn apply(
         &self,
         problem: &P,
         state: &mut P::State,
-    ) -> ExpansionResult<P::Outcome, Self::OutputIter>;
+        state_key: K,
+    ) -> ExpansionResult<P::Outcome, Self::OutputIter, K>;
 }
 
-pub trait BlockExpansionTrait<P: DecisionProcess, I> {
+pub trait BlockExpansionTrait<P: DecisionProcess, I, K> {
     type OutputIter: Iterator<Item = I>;
-    fn accept(&self, problem: &P, state: &mut P::State) -> usize;
-    fn process_accepted(&self) -> Vec<ExpansionResult<P::Outcome, Self::OutputIter>>;
+    fn accept(&self, problem: &P, state: &mut P::State, state_key: K) -> usize;
+    fn process_accepted(&self) -> Vec<ExpansionResult<P::Outcome, Self::OutputIter, K>>;
 }
 
 pub struct BasicExpansion<S> {
@@ -28,7 +29,7 @@ impl<S> BasicExpansion<S> {
     }
 }
 
-impl<P: DecisionProcess, S> ExpansionTrait<P, OnlyAction<P::Action>> for BasicExpansion<S>
+impl<P: DecisionProcess, S, K> ExpansionTrait<P, OnlyAction<P::Action>, K> for BasicExpansion<S>
 where
     S: Simulator<P>,
 {
@@ -38,12 +39,13 @@ where
         &self,
         problem: &P,
         state: &mut P::State,
-    ) -> ExpansionResult<<P as DecisionProcess>::Outcome, Self::OutputIter> {
+        state_key: K,
+    ) -> ExpansionResult<<P as DecisionProcess>::Outcome, Self::OutputIter, K> {
         if let Some(outcome) = problem.is_finished(state) {
             ExpansionResult {
                 outcome,
-                prune: true,
                 edges: vec![].into_iter(),
+                state_key,
             }
         } else {
             let edges: Vec<OnlyAction<P::Action>> = problem
@@ -52,8 +54,8 @@ where
                 .collect();
             ExpansionResult {
                 outcome: self.simulator.sample_outcome(problem, state),
-                prune: false,
                 edges: edges.into_iter(),
+                state_key,
             }
         }
     }
@@ -68,7 +70,7 @@ impl<S> BasicExpansionWithUniformPrior<S> {
     }
 }
 
-impl<P: DecisionProcess, S> ExpansionTrait<P, ActionWithStaticPolicy<P::Action>>
+impl<P: DecisionProcess, S, K> ExpansionTrait<P, ActionWithStaticPolicy<P::Action>, K>
     for BasicExpansionWithUniformPrior<S>
 where
     S: Simulator<P>,
@@ -79,12 +81,13 @@ where
         &self,
         problem: &P,
         state: &mut P::State,
-    ) -> ExpansionResult<<P as DecisionProcess>::Outcome, Self::OutputIter> {
+        state_key: K,
+    ) -> ExpansionResult<<P as DecisionProcess>::Outcome, Self::OutputIter, K> {
         if let Some(outcome) = problem.is_finished(state) {
             ExpansionResult {
                 outcome,
-                prune: true,
                 edges: vec![].into_iter(),
+                state_key,
             }
         } else {
             let actions: Vec<P::Action> = problem.legal_actions(state).collect();
@@ -98,8 +101,8 @@ where
                 .collect();
             ExpansionResult {
                 outcome: self.simulator.sample_outcome(problem, state),
-                prune: false,
                 edges: edges.into_iter(),
+                state_key,
             }
         }
     }
@@ -119,24 +122,29 @@ impl<X, S> BlockExpansionFromBasic<X, S> {
     }
 }
 
-impl<P: DecisionProcess, X, I> BlockExpansionTrait<P, I>
-    for BlockExpansionFromBasic<X, ExpansionResult<P::Outcome, X::OutputIter>>
+impl<P: DecisionProcess, X, I, K> BlockExpansionTrait<P, I, K>
+    for BlockExpansionFromBasic<X, ExpansionResult<P::Outcome, X::OutputIter, K>>
 where
-    X: ExpansionTrait<P, I>,
+    X: ExpansionTrait<P, I, K>,
     P::Outcome: Clone,
-    ExpansionResult<P::Outcome, X::OutputIter>: Clone,
+    ExpansionResult<P::Outcome, X::OutputIter, K>: Clone,
 {
     type OutputIter = X::OutputIter;
 
-    fn accept(&self, problem: &P, state: &mut <P as DecisionProcess>::State) -> usize {
+    fn accept(
+        &self,
+        problem: &P,
+        state: &mut <P as DecisionProcess>::State,
+        state_key: K,
+    ) -> usize {
         let mut q = self.queue.lock();
-        q.push(self.basic.apply(problem, state));
+        q.push(self.basic.apply(problem, state, state_key));
         q.len() - 1
     }
 
     fn process_accepted(
         &self,
-    ) -> Vec<ExpansionResult<<P as DecisionProcess>::Outcome, Self::OutputIter>> {
+    ) -> Vec<ExpansionResult<<P as DecisionProcess>::Outcome, Self::OutputIter, K>> {
         let mut q = self.queue.lock();
         let result = q.clone();
         q.clear();
@@ -144,10 +152,10 @@ where
     }
 }
 
-impl<P: DecisionProcess, X, I> ExpansionTrait<P, I>
-    for BlockExpansionFromBasic<X, ExpansionResult<P::Outcome, X::OutputIter>>
+impl<P: DecisionProcess, X, I, K> ExpansionTrait<P, I, K>
+    for BlockExpansionFromBasic<X, ExpansionResult<P::Outcome, X::OutputIter, K>>
 where
-    X: ExpansionTrait<P, I>,
+    X: ExpansionTrait<P, I, K>,
 {
     type OutputIter = X::OutputIter;
 
@@ -155,7 +163,8 @@ where
         &self,
         problem: &P,
         state: &mut <P as DecisionProcess>::State,
-    ) -> ExpansionResult<<P as DecisionProcess>::Outcome, Self::OutputIter> {
-        self.basic.apply(problem, state)
+        state_key: K,
+    ) -> ExpansionResult<<P as DecisionProcess>::Outcome, Self::OutputIter, K> {
+        self.basic.apply(problem, state, state_key)
     }
 }
