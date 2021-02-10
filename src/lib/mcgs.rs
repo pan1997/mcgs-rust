@@ -150,9 +150,14 @@ where
                 return Expand;
             }
 
-            node.unlock();
             let next_node = self.search_graph.get_target_node(edge);
             next_node.lock();
+
+            // This unlock is done after locking the next node to prevent erroneous transposition
+            // detection in the rare case that another thread jumps over this node. This also is
+            // safe and doesn't cause a deadlock with back propagation, as propagation unlocks the
+            // node before locking another.
+            node.unlock();
 
             // Check if this is a transposition (next_node has extra selections)
             if next_node.selection_count() > edge_selection_count {
