@@ -17,9 +17,9 @@ use std::cmp::min;
 use std::fmt::Display;
 use std::marker::PhantomData;
 use std::ops::Deref;
+use std::process::exit;
 use std::thread::sleep;
 use std::time::{Duration, Instant};
-use std::process::exit;
 
 pub struct ExpansionResult<O, EI, K> {
     state_key: K,
@@ -53,9 +53,9 @@ pub struct Search<P, S, R, G, X, D, H> {
     phantom: PhantomData<D>,
 }
 
-enum SelectionResult<N, E, V> {
-    Expand(E),
-    Propagate(N, V, u32), // The second arg is the weight
+enum SelectionResult<N, V> {
+    Expand,
+    Propagate(N, V, u32), // The third arg is the weight
 }
 
 impl<P, S, G, X, D, H>
@@ -125,7 +125,7 @@ where
         state: &mut P::State,
         trajectory: &mut Vec<(&'a G::Node, &'a G::Edge)>,
         undo_stack: &mut Vec<P::UndoAction>,
-    ) -> SelectionResult<&'a G::Node, &'a G::Edge, P::Outcome> {
+    ) -> SelectionResult<&'a G::Node, P::Outcome> {
         let mut node = root;
         node.lock();
         while !self.search_graph.is_leaf(node) {
@@ -147,7 +147,7 @@ where
 
             if self.search_graph.is_dangling(edge) {
                 node.unlock();
-                return Expand(edge);
+                return Expand;
             }
 
             node.unlock();
@@ -188,7 +188,7 @@ where
             node = next_node;
         }
         // This is needed
-        node.increment_selection_count();
+        //node.increment_selection_count();
         node.unlock();
         SelectionResult::Propagate(node, node.expected_outcome(), 1)
     }
@@ -225,41 +225,13 @@ where
     fn propagate(
         &self,
         trajectory: &mut Vec<(&G::Node, &G::Edge)>,
-        node: &G::Node,
+        node: &G::Node, // This is needed later for alpha beta
         mut outcome: P::Outcome,
         mut weight: u32,
     ) {
-        //node.lock();
-        //let mut child_sample_count = node.sample_count();
-        //node.add_sample(&outcome, weight);
-        //if self.search_graph.is_leaf(node) {
-            // Not a problem with marking a node solved again
-        //    node.mark_solved();
-        //}
-        //node.unlock();
-        // TODO: add graph propogation
         while let Some((node, edge)) = trajectory.pop() {
             node.lock();
-            //let edge_sample_count = edge.sample_count();
-            /*
-            // The child node is a transposition
-            if child_sample_count > edge_sample_count {
-                // TODO: fix
-                println!("transposition");
-                let old_weight = weight;
-                weight = min(
-                    child_sample_count - edge_sample_count,
-                    self.maximum_trajectory_weight,
-                );
-                outcome.update_with_moving_average(
-                    &node.expected_outcome(),
-                    weight,
-                    weight + old_weight,
-                )
-            }
-            */
             edge.add_sample(&outcome, weight);
-            //child_sample_count = node.sample_count();
             node.add_sample(&outcome, weight);
             node.unlock();
         }
@@ -274,7 +246,7 @@ where
         let s = self.select(root, state, trajectory, undo_stack);
 
         let (node, outcome, weight) = match s {
-            SelectionResult::Expand(e) => {
+            SelectionResult::Expand => {
                 let (n, e) = trajectory.last().unwrap();
                 self.expand(*n, *e, state)
             }
@@ -292,10 +264,10 @@ where
     where
         X: BlockExpansionTrait<P, D, H::K>,
     {
-        let trajectories_plus = &mut vec![];
+        let trajectories = &mut vec![];
         let undo_stack = &mut vec![];
         let mut short_count = 0;
-        while trajectories_plus.len() < size && short_count < 2 * size {
+        while trajectories.len() < size && short_count < 2 * size {
             let mut trajectory = vec![];
             let s = self.select(root, state, &mut trajectory, undo_stack);
             match s {
@@ -303,9 +275,8 @@ where
                     self.propagate(&mut trajectory, node, outcome, weight);
                     short_count += 1;
                 }
-                SelectionResult::Expand(node) => trajectories_plus.push((
+                SelectionResult::Expand => trajectories.push((
                     trajectory,
-                    node,
                     self.expand_operation.accept(
                         &self.problem,
                         state,
@@ -320,15 +291,15 @@ where
         let expansion_results = self.expand_operation.process_accepted();
 
         let mut inverse_map = vec![0; expansion_results.len()];
-
-        for (i, (_, _, index)) in trajectories_plus.iter().enumerate() {
+        // TODO: fix collisions
+        for (i, (_, index)) in trajectories.iter().enumerate() {
             inverse_map[*index] = i;
         }
 
         for (expansion_result, trajectory_index) in expansion_results.into_iter().zip(inverse_map) {
-            let (trajectory, edge, _) = &mut trajectories_plus[trajectory_index];
+            let (trajectory, _) = &mut trajectories[trajectory_index];
 
-            let (n, e) = trajectory.last().unwrap();
+            let (_, e) = trajectory.last().unwrap();
             let node =
                 self.search_graph
                     .add_child(expansion_result.state_key, e, expansion_result.edges);

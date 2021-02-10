@@ -205,6 +205,7 @@ pub struct WeightedRandomPolicyWithExpDepth<P1, P2> {
     epsilon: f32,
     factor: f32,
 }
+
 impl<P1, P2> WeightedRandomPolicyWithExpDepth<P1, P2> {
     pub(crate) fn new(p1: P1, p2: P2, e: f32, f: f32) -> Self {
         WeightedRandomPolicyWithExpDepth {
@@ -215,6 +216,7 @@ impl<P1, P2> WeightedRandomPolicyWithExpDepth<P1, P2> {
         }
     }
 }
+
 impl<D, P, G, P1, P2, H> SelectionPolicy<D, P, G, H> for WeightedRandomPolicyWithExpDepth<P1, P2>
 where
     G: SearchGraph<D, H>,

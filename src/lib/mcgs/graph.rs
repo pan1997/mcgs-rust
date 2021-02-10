@@ -12,6 +12,7 @@ use std::hash::Hash;
 use std::ops::Deref;
 use std::sync::Arc;
 
+// TODO: test this
 pub struct Node<O, I> {
     lock: Mutex,
     internal: UnsafeCell<Internal<O>>,
@@ -167,7 +168,14 @@ impl<H: Eq + Hash, O: Clone, D> SearchGraph<D, H> for SafeGraph<H, D, O> {
         e: &'a Self::Edge,
         l: L,
     ) -> &'a Self::Node {
-        unimplemented!()
+        let n = self.create_node(s, l);
+        unsafe {
+            let eo = &mut *e.node.get();
+            if eo.is_none() {
+                eo.replace(n);
+            }
+            eo.as_ref().unwrap()
+        }
     }
 
     fn clear(&self, _: Self::NodeRef) {
