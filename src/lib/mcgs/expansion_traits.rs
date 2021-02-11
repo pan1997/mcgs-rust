@@ -15,8 +15,21 @@ pub trait ExpansionTrait<P: DecisionProcess, I, K> {
 
 pub trait BlockExpansionTrait<P: DecisionProcess, I, K> {
     type OutputIter: Iterator<Item = I>;
-    fn accept(&self, problem: &P, state: &mut P::State, state_key: K) -> usize;
-    fn process_accepted(&self) -> Vec<ExpansionResult<P::Outcome, Self::OutputIter, K>>;
+    type Batch;
+    fn accept(
+        &self,
+        problem: &P,
+        state: &mut P::State,
+        state_key: K,
+        batch: &mut Self::Batch,
+    ) -> usize;
+
+    fn process_accepted(
+        &self,
+        batch: Self::Batch,
+    ) -> Vec<ExpansionResult<P::Outcome, Self::OutputIter, K>>;
+
+    fn new_batch(&self) -> Self::Batch;
 }
 
 pub struct BasicExpansion<S> {
@@ -108,52 +121,47 @@ where
     }
 }
 
-pub struct BlockExpansionFromBasic<X, S> {
+pub struct BlockExpansionFromBasic<X> {
     basic: X,
-    queue: Mutex<Vec<S>>,
 }
 
-impl<X, S> BlockExpansionFromBasic<X, S> {
+impl<X> BlockExpansionFromBasic<X> {
     pub fn new(x: X) -> Self {
-        BlockExpansionFromBasic {
-            basic: x,
-            queue: Mutex::new(vec![]),
-        }
+        BlockExpansionFromBasic { basic: x }
     }
 }
 
-impl<P: DecisionProcess, X, I, K> BlockExpansionTrait<P, I, K>
-    for BlockExpansionFromBasic<X, ExpansionResult<P::Outcome, X::OutputIter, K>>
+impl<P: DecisionProcess, X, I, K> BlockExpansionTrait<P, I, K> for BlockExpansionFromBasic<X>
 where
     X: ExpansionTrait<P, I, K>,
-    P::Outcome: Clone,
-    ExpansionResult<P::Outcome, X::OutputIter, K>: Clone,
 {
     type OutputIter = X::OutputIter;
+    type Batch = Vec<ExpansionResult<P::Outcome, X::OutputIter, K>>;
 
     fn accept(
         &self,
         problem: &P,
         state: &mut <P as DecisionProcess>::State,
         state_key: K,
+        batch: &mut Self::Batch,
     ) -> usize {
-        let mut q = self.queue.lock();
-        q.push(self.basic.apply(problem, state, state_key));
-        q.len() - 1
+        batch.push(self.basic.apply(problem, state, state_key));
+        batch.len() - 1
     }
 
     fn process_accepted(
         &self,
-    ) -> Vec<ExpansionResult<<P as DecisionProcess>::Outcome, Self::OutputIter, K>> {
-        let mut q = self.queue.lock();
-        let result = q.clone();
-        q.clear();
-        result
+        batch: Self::Batch,
+    ) -> Vec<ExpansionResult<P::Outcome, X::OutputIter, K>> {
+        batch
+    }
+
+    fn new_batch(&self) -> Self::Batch {
+        vec![]
     }
 }
 
-impl<P: DecisionProcess, X, I, K> ExpansionTrait<P, I, K>
-    for BlockExpansionFromBasic<X, ExpansionResult<P::Outcome, X::OutputIter, K>>
+impl<P: DecisionProcess, X, I, K> ExpansionTrait<P, I, K> for BlockExpansionFromBasic<X>
 where
     X: ExpansionTrait<P, I, K>,
 {

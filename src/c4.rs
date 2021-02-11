@@ -41,9 +41,7 @@ fn main() {
         C4::new(9, 7),
         SafeTree::<OnlyAction<_>, f32>::new(0.0),
         WeightedRandomPolicyWithExpDepth::new(RandomPolicy, UctPolicy::new(2.4), 0.001, -0.8),
-
         //UctPolicy::new(2.4),
-
         BasicExpansion::new(OneStepGreedySimulator),
         NoHash,
         0.01,

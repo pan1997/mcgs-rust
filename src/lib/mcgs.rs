@@ -161,9 +161,8 @@ where
 
             // Check if this is a transposition (next_node has extra selections)
             if next_node.selection_count() > edge_selection_count {
-                // TODO: this has bugs
-                //println!("transposition in sel");
-                // TODO: what happens when the next node has no samples...
+                // Next node always has some samples, as we have moved away from dangling nodes
+                // to dangling edges.
                 let delta = next_node
                     .expected_outcome()
                     .reward_for_agent(agent)
@@ -192,8 +191,6 @@ where
 
             node = next_node;
         }
-        // This is needed
-        //node.increment_selection_count();
         node.unlock();
         SelectionResult::Propagate(node, node.expected_outcome(), 1)
     }
@@ -272,6 +269,7 @@ where
         let trajectories = &mut vec![];
         let undo_stack = &mut vec![];
         let mut short_count = 0;
+        let mut batch = self.expand_operation.new_batch();
         while trajectories.len() < size && short_count < 2 * size {
             let mut trajectory = vec![];
             let s = self.select(root, state, &mut trajectory, undo_stack);
@@ -286,6 +284,7 @@ where
                         &self.problem,
                         state,
                         self.state_hasher.key(state),
+                        &mut batch,
                     ),
                 )),
             }
@@ -293,7 +292,7 @@ where
                 self.problem.undo_transition(state, u);
             }
         }
-        let expansion_results = self.expand_operation.process_accepted();
+        let expansion_results = self.expand_operation.process_accepted(batch);
 
         let mut inverse_map = vec![0; expansion_results.len()];
         // TODO: fix collisions
@@ -308,8 +307,6 @@ where
             let node =
                 self.search_graph
                     .add_child(expansion_result.state_key, e, expansion_result.edges);
-            //self.search_graph
-            //    .create_children(node, expansion_result.edges);
             self.propagate(trajectory, node, expansion_result.outcome, 1);
         }
     }
