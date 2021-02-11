@@ -1,6 +1,7 @@
 use crate::lib::decision_process::DecisionProcess;
 use petgraph::prelude::*;
 use std::collections::BTreeMap;
+use crate::lib::mcgs::graph::Hsh;
 
 type Action = u32;
 type Outcome = Vec<f32>;
@@ -77,6 +78,15 @@ impl crate::lib::decision_process::Outcome<Agent> for Vec<f32> {
     }
 }
 
+pub(crate) struct GHash;
+impl Hsh<NodeIndex> for GHash {
+    type K = u32;
+
+    fn key(&self, s: &NodeIndex<u32>) -> Self::K {
+        s.index() as u32
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -139,6 +149,37 @@ pub(crate) mod tests {
         result.terminal_states.insert(n2, vec![1.0, -1.0]);
         result.terminal_states.insert(n3, vec![0.0, 0.0]);
         result.terminal_states.insert(n4, vec![-1.0, 1.0]);
+        result
+    }
+
+    pub(crate) fn problem3() -> GraphDP {
+        let mut result = GraphDP {
+            start_state: Default::default(),
+            graph: Graph::new(),
+            terminal_states: Default::default(),
+        };
+        let mut g = &mut result.graph;
+        let n0 = g.add_node(0);
+        let n1 = g.add_node(1);
+        let n2 = g.add_node(1);
+        let n3 = g.add_node(0);
+        let n4 = g.add_node(0);
+        let n5 = g.add_node(0);
+        let n6 = g.add_node(1);
+        let n7 = g.add_node(1);
+
+        g.add_edge(n0, n1, 0);
+        g.add_edge(n0, n2, 1);
+        g.add_edge(n1, n3, 2);
+        g.add_edge(n1, n4, 3);
+        g.add_edge(n2, n4, 4);
+        g.add_edge(n2, n5, 5);
+        g.add_edge(n4, n6, 6);
+        g.add_edge(n4, n7, 7);
+        result.terminal_states.insert(n3, vec![-1.0, 1.0]);
+        result.terminal_states.insert(n5, vec![0.0, 0.0]);
+        result.terminal_states.insert(n6, vec![1.0, -1.0]);
+        result.terminal_states.insert(n7, vec![2.0, -2.0]);
         result
     }
 }

@@ -4,6 +4,7 @@ use crate::lib::mcgs::search_graph::{
 };
 use num::ToPrimitive;
 use rand::{thread_rng, Rng};
+use std::sync::atomic::{AtomicU32, Ordering};
 
 pub trait SelectionPolicy<D, P, G, H>
 where
@@ -204,6 +205,8 @@ pub struct WeightedRandomPolicyWithExpDepth<P1, P2> {
     p: P2,
     epsilon: f32,
     factor: f32,
+    pub(crate) c1: Vec<AtomicU32>,
+    pub(crate) c2: Vec<AtomicU32>,
 }
 
 impl<P1, P2> WeightedRandomPolicyWithExpDepth<P1, P2> {
@@ -213,6 +216,8 @@ impl<P1, P2> WeightedRandomPolicyWithExpDepth<P1, P2> {
             p_epsilon: p1,
             epsilon: e,
             factor: f,
+            c1: (0..100).map(|_| AtomicU32::new(0)).collect(),
+            c2: (0..100).map(|_| AtomicU32::new(0)).collect(),
         }
     }
 }
@@ -228,8 +233,10 @@ where
         let w: f32 = thread_rng().gen();
         let depth_factor = (self.factor * depth as f32).exp();
         if w < self.epsilon * depth_factor {
+            self.c1[depth as usize].fetch_add(1, Ordering::SeqCst);
             self.p_epsilon.select(problem, store, node, agent, depth)
         } else {
+            self.c2[depth as usize].fetch_add(1, Ordering::SeqCst);
             self.p.select(problem, store, node, agent, depth)
         }
     }

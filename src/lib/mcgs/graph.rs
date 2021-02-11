@@ -123,7 +123,7 @@ pub struct SafeGraph<H: Eq + Hash, D, O> {
 }
 
 impl<H: Eq + Hash, D, O> SafeGraph<H, D, O> {
-    fn new(outcome: O) -> Self {
+    pub(crate) fn new(outcome: O) -> Self {
         // TODO: set capacity
         SafeGraph {
             default_outcome: outcome,
@@ -155,7 +155,7 @@ impl<H: Eq + Hash, O: Clone, D> SearchGraph<D, H> for SafeGraph<H, D, O> {
                 .map(|e| Edge::new(e, self.default_outcome.clone()))
                 .collect();
             let n = Arc::new(Node::new(self.default_outcome.clone(), edges));
-            self.nodes.insert(s, n.clone()).unwrap();
+            self.nodes.insert(s, n.clone());
             n
         } else {
             opt.unwrap().clone()
@@ -232,5 +232,42 @@ impl<O, A> Deref for Edge<O, ActionWithStaticPolicy<A>> {
 impl<O, A> PriorPolicyStore for Edge<O, ActionWithStaticPolicy<A>> {
     fn prior_policy_score(&self) -> f32 {
         self.data.static_policy_score
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use super::*;
+    use std::fmt::{Debug, Display};
+
+    pub fn print_graph<H: Eq + Hash, O: Debug + Clone, D: Display>(
+        ns: &SafeGraph<H, D, O>,
+        n: &Node<O, D>,
+        offset: u32,
+        full: bool,
+    ) {
+        println!("node: {{internal: {:?}}}", unsafe { &*n.internal.get() });
+        if n.selection_count() > 0 {
+            for e in 0..ns.children_count(n) {
+                for _ in 0..offset {
+                    print!("  ");
+                }
+                print!("|-");
+                let edge = ns.get_edge(n, e);
+                print!("-> {{data: {}, internal: {:?}}} ", edge.data, unsafe {
+                    &*edge.internal.get()
+                });
+                if !full || ns.is_dangling(edge) {
+                    println!("-> !");
+                } else {
+                    print_graph(
+                        ns,
+                        ns.get_target_node(edge),
+                        offset + 1,
+                        full,
+                    );
+                }
+            }
+        }
     }
 }

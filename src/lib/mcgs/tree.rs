@@ -252,7 +252,7 @@ pub(crate) mod tests {
         println!("{}", x);
     }
 
-    pub fn print_graph<O: Debug + Clone, D: Display>(
+    pub fn print_tree<O: Debug + Clone, D: Display>(
         ns: &SafeTree<D, O>,
         n: &Node<O, D>,
         offset: u32,
@@ -272,7 +272,7 @@ pub(crate) mod tests {
                 if !full || SearchGraph::<_, ()>::is_dangling(ns, edge) {
                     println!("-> !");
                 } else {
-                    print_graph(
+                    print_tree(
                         ns,
                         SearchGraph::<_, ()>::get_target_node(ns, edge),
                         offset + 1,

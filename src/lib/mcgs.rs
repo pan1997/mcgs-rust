@@ -101,6 +101,10 @@ where
         &self.problem
     }
 
+    pub(crate) fn tree_policy(&self) -> &S {
+        &self.selection_policy
+    }
+
     pub fn get_new_node(&self, state: &mut P::State) -> G::NodeRef
     where
         X: ExpansionTrait<P, D, H::K>,
@@ -133,9 +137,16 @@ where
 
             let edge = self.search_graph.get_edge(
                 node,
-                self.selection_policy
-                    .select(&self.problem, &self.search_graph, node, agent, 0),
+                self.selection_policy.select(
+                    &self.problem,
+                    &self.search_graph,
+                    node,
+                    agent,
+                    trajectory.len() as u32,
+                ),
             );
+
+            //let action: &P::Action = &edge;
 
             node.increment_selection_count();
             edge.increment_selection_count();
@@ -233,8 +244,17 @@ where
     ) {
         while let Some((node, edge)) = trajectory.pop() {
             node.lock();
-            edge.add_sample(&outcome, weight);
-            node.add_sample(&outcome, weight);
+            let nc = node.selection_count();
+            let nd = self.search_graph.children_count(node);
+            let w = if nc > nd * 16 {
+                weight * 4
+            } else if nc > nd * 4 {
+                weight * 2
+            } else {
+                weight
+            };
+            edge.add_sample(&outcome, w);
+            node.add_sample(&outcome, w);
             node.unlock();
         }
     }
@@ -398,10 +418,11 @@ where
         node_limit: Option<u32>,
         time_limit: Option<u128>,
         confidence: Option<u32>, // out of 100
+        block: bool,
     ) -> u128
     where
         P::State: Clone + Send,
-        X: ExpansionTrait<P, D, H::K>,
+        X: ExpansionTrait<P, D, H::K> + BlockExpansionTrait<P, D, H::K>,
         P::Action: Display,
         P::Outcome: Display,
         <<P::Outcome as Outcome<P::Agent>>::RewardType as Distance>::NormType: Sync,
@@ -421,8 +442,12 @@ where
                 scope.spawn(move |_| {
                     while !self.end_search(start_time, root, node_limit, time_limit, confidence, 32)
                     {
-                        for _ in 0..256 {
-                            self.one_iteration(root, &mut local_state);
+                        if !block || root.selection_count() < 256 {
+                            for _ in 0..256 {
+                                self.one_iteration(root, &mut local_state);
+                            }
+                        } else {
+                            self.one_block(root, &mut local_state, 64);
                         }
                     }
                 });
@@ -430,7 +455,7 @@ where
             while !self.end_search(start_time, root, node_limit, time_limit, confidence, 32) {
                 sleep(Duration::from_millis(500));
                 let mut v = vec![];
-                self.print_pv(root, Some(start_time), Some(start_count), &mut v, 256);
+                self.print_pv(root, Some(start_time), Some(start_count), &mut v, 1024);
             }
         })
         .unwrap();
@@ -459,11 +484,16 @@ where
                 selection_count as u128 / (elapsed + 1)
             );
         }
+        let mut sl = 0;
         while !self.search_graph.is_leaf(root) {
             let best_edge_index = MostVisitedPolicy.select(&self.problem, &self.search_graph, root);
             let edge = self.search_graph.get_edge(root, best_edge_index);
+            if self.search_graph.is_dangling(edge) {
+                break;
+            }
             let action: &P::Action = &edge;
             if root.selection_count() > filter {
+                sl += 1;
                 print!(
                     "{{{}, {}k({})%, {:.2}",
                     action,
@@ -477,12 +507,12 @@ where
                     print!("}}-> ");
                 }
             } else {
-                break;
+                print!("{{?}}-> ");
             }
             trajectory.push((root, edge));
             root = self.search_graph.get_target_node(edge);
         }
-        println!("| depth {}", trajectory.len());
+        println!("| depth {}/{}", sl, trajectory.len());
     }
 }
 
@@ -500,15 +530,17 @@ impl<K: Clone, O: Clone, EI: Clone> Clone for ExpansionResult<K, O, EI> {
 mod tests {
     use super::*;
     use crate::lib::decision_process::c4::C4;
-    use crate::lib::decision_process::graph_dp::tests::{problem1, problem2, DSim};
+    use crate::lib::decision_process::graph_dp::tests::{problem1, problem2, problem3, DSim};
     use crate::lib::decision_process::DefaultSimulator;
     use crate::lib::mcgs::expansion_traits::{
         BasicExpansion, BasicExpansionWithUniformPrior, BlockExpansionFromBasic,
     };
-    use crate::lib::mcgs::graph::NoHash;
-    use crate::lib::mcgs::tree::tests::print_graph;
+    use crate::lib::mcgs::graph::{NoHash, SafeGraph};
+    use crate::lib::mcgs::tree::tests::print_tree;
     use crate::lib::mcgs::tree::SafeTree;
     use crate::lib::{ActionWithStaticPolicy, OnlyAction};
+    use crate::lib::decision_process::graph_dp::GHash;
+    use crate::lib::mcgs::graph::tests::print_graph;
 
     #[test]
     fn random() {
@@ -525,10 +557,10 @@ mod tests {
 
         let state = &mut s.problem.start_state();
         let n = s.get_new_node(state);
-        print_graph(&s.search_graph, &n, 0, true);
+        print_tree(&s.search_graph, &n, 0, true);
         for _ in 0..10 {
             s.one_iteration(&n, state);
-            print_graph(&s.search_graph, &n, 0, true);
+            print_tree(&s.search_graph, &n, 0, true);
         }
     }
 
@@ -547,10 +579,10 @@ mod tests {
 
         let state = &mut s.problem.start_state();
         let n = s.get_new_node(state);
-        print_graph(&s.search_graph, &n, 0, true);
+        print_tree(&s.search_graph, &n, 0, true);
         for _ in 0..100 {
             s.one_iteration(&n, state);
-            print_graph(&s.search_graph, &n, 0, true);
+            print_tree(&s.search_graph, &n, 0, true);
         }
     }
 
@@ -569,10 +601,10 @@ mod tests {
 
         let state = &mut s.problem.start_state();
         let n = s.get_new_node(state);
-        print_graph(&s.search_graph, &n, 0, true);
+        print_tree(&s.search_graph, &n, 0, true);
         for _ in 0..20 {
             s.one_block(&n, state, 5);
-            print_graph(&s.search_graph, &n, 0, true);
+            print_tree(&s.search_graph, &n, 0, true);
         }
     }
 
@@ -591,10 +623,10 @@ mod tests {
 
         let state = &mut s.problem.start_state();
         let n = s.get_new_node(state);
-        print_graph(&s.search_graph, &n, 0, true);
+        print_tree(&s.search_graph, &n, 0, true);
         for _ in 0..100 {
             s.one_iteration(&n, state);
-            print_graph(&s.search_graph, &n, 0, true);
+            print_tree(&s.search_graph, &n, 0, true);
         }
     }
 
@@ -613,10 +645,10 @@ mod tests {
 
         let state = &mut s.problem.start_state();
         let n = s.get_new_node(state);
-        print_graph(&s.search_graph, &n, 0, true);
+        print_tree(&s.search_graph, &n, 0, true);
         for _ in 0..100 {
             s.one_iteration(&n, state);
-            print_graph(&s.search_graph, &n, 0, true);
+            print_tree(&s.search_graph, &n, 0, true);
         }
     }
 
@@ -634,10 +666,57 @@ mod tests {
         );
         let state = &mut s.problem.start_state();
         let n = s.get_new_node(state);
-        print_graph(&s.search_graph, &n, 0, true);
+        print_tree(&s.search_graph, &n, 0, true);
         for _ in 0..1000 {
             s.one_iteration(&n, state);
         }
-        print_graph(&s.search_graph, &n, 0, false);
+        print_tree(&s.search_graph, &n, 0, false);
+    }
+
+    #[test]
+    fn g_test_3() {
+        let s = Search::new(
+            problem3(),
+            SafeTree::<OnlyAction<_>, _>::new(vec![0.0, 0.0]),
+            UctPolicy::new(2.4),
+            BasicExpansion::new(DSim),
+            NoHash,
+            0.01,
+            1,
+            1,
+        );
+
+        let state = &mut s.problem.start_state();
+        let n = s.get_new_node(state);
+        print_tree(&s.search_graph, &n, 0, true);
+        for _ in 0..400 {
+            s.one_iteration(&n, state);
+        }
+        print_tree(&s.search_graph, &n, 0, true);
+        s.one_iteration(&n, state);
+        println!()
+    }
+
+    #[test]
+    fn g_test() {
+        let s = Search::new(
+            problem3(),
+            SafeGraph::<u32, OnlyAction<_>, _>::new(vec![0.0, 0.0]),
+            UctPolicy::new(2.4),
+            BasicExpansion::new(DSim),
+            GHash,
+            0.01,
+            1,
+            1,
+        );
+
+        let state = &mut s.problem.start_state();
+        let n = s.get_new_node(state);
+        print_graph(&s.search_graph, &n, 0, true);
+        for _ in 0..400 {
+            s.one_iteration(&n, state);
+        }
+        print_graph(&s.search_graph, &n, 0, true);
+        println!()
     }
 }

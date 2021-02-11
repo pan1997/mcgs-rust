@@ -40,9 +40,9 @@ fn main() {
     let mut s = Search::new(
         C4::new(9, 7),
         SafeTree::<OnlyAction<_>, f32>::new(0.0),
-        WeightedRandomPolicyWithExpDepth::new(RandomPolicy, UctPolicy::new(2.4), 0.001, -0.8),
+        WeightedRandomPolicyWithExpDepth::new(RandomPolicy, UctPolicy::new(2.4), 0.05, -1.5),
         //UctPolicy::new(2.4),
-        BasicExpansion::new(OneStepGreedySimulator),
+        BlockExpansionFromBasic::new(BasicExpansion::new(OneStepGreedySimulator)),
         NoHash,
         0.01,
         1,
@@ -72,7 +72,8 @@ fn main() {
                 println!("{}", state);
                 let time_limit: u128 = read!();
                 let node = s.get_new_node(&mut state); // search_graph().create_node(&state);
-                let elapsed = s.start_parallel(&node, &state, None, Some(time_limit), Some(97));
+                let elapsed =
+                    s.start_parallel(&node, &state, None, Some(time_limit), Some(97), false);
                 let best_edge = s.search_graph().get_edge(
                     &node,
                     MostVisitedPolicy.select(s.problem(), s.search_graph(), &node),
@@ -86,6 +87,18 @@ fn main() {
                     node.selection_count(),
                     elapsed
                 );
+                //println!("p1: {:?} p2: {:?}", s.tree_policy().c1, s.tree_policy().c2);
+                for (index, (a, b)) in s
+                    .tree_policy()
+                    .c1
+                    .iter()
+                    .zip(s.tree_policy().c2.iter())
+                    .enumerate()
+                {
+                    let ac = a.load(Ordering::SeqCst);
+                    let bc = b.load(Ordering::SeqCst);
+                    println!("{} {}", index, ac as f32 / (ac + bc) as f32);
+                }
             }
             _ => (),
         }
