@@ -1,7 +1,7 @@
-use crate::lib::decision_process::DecisionProcess;
+use crate::lib::decision_process::{DecisionProcess, Outcome as O_};
+use crate::lib::mcgs::graph::Hsh;
 use petgraph::prelude::*;
 use std::collections::BTreeMap;
-use crate::lib::mcgs::graph::Hsh;
 
 type Action = u32;
 type Outcome = Vec<f32>;
@@ -75,6 +75,19 @@ impl crate::lib::decision_process::Outcome<Agent> for Vec<f32> {
             }
             _ => panic!("vdcdsvc"),
         }
+    }
+}
+
+impl crate::lib::decision_process::WinnableOutcome<Agent> for Vec<f32> {
+    fn is_winning_for(&self, a: u32) -> bool {
+        let s = self.reward_for_agent(a);
+        s >= 1.0
+    }
+}
+
+impl crate::lib::decision_process::ComparableOutcome<Agent> for Vec<f32> {
+    fn is_better_than(&self, other: &Self, a: u32) -> bool {
+        self.reward_for_agent(a) > other.reward_for_agent(a)
     }
 }
 
@@ -176,10 +189,10 @@ pub(crate) mod tests {
         g.add_edge(n2, n5, 5);
         g.add_edge(n4, n6, 6);
         g.add_edge(n4, n7, 7);
-        result.terminal_states.insert(n3, vec![-1.0, 1.0]);
+        result.terminal_states.insert(n3, vec![-0.5, 0.5]);
         result.terminal_states.insert(n5, vec![0.0, 0.0]);
-        result.terminal_states.insert(n6, vec![1.0, -1.0]);
-        result.terminal_states.insert(n7, vec![2.0, -2.0]);
+        result.terminal_states.insert(n6, vec![0.5, -0.5]);
+        result.terminal_states.insert(n7, vec![0.9, -0.9]);
         result
     }
 }

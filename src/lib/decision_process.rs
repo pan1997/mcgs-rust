@@ -33,6 +33,7 @@ pub trait Outcome<Agent> {
 pub trait SimpleMovingAverage {
     // Updates this value using the simple moving average formula
     fn update_with_moving_average(&mut self, o: &Self, x: u32, y: u32);
+    fn reset(&mut self, o: &Self);
 }
 
 pub trait Distance {
@@ -64,12 +65,22 @@ impl SimpleMovingAverage for f32 {
     fn update_with_moving_average(&mut self, o: &Self, x: u32, y: u32) {
         *self += Self::from_u32(x).unwrap() * (*o - *self) / Self::from_u32(y).unwrap()
     }
+
+    fn reset(&mut self, o: &Self) {
+        *self = *o
+    }
 }
 
 impl SimpleMovingAverage for Vec<f32> {
     fn update_with_moving_average(&mut self, o: &Self, x: u32, y: u32) {
         for (s, other) in self.iter_mut().zip(o.iter()) {
             *s += (x as f32) * (other - *s) / (y as f32)
+        }
+    }
+
+    fn reset(&mut self, o: &Self) {
+        for (x, y) in self.iter_mut().zip(o.iter()) {
+            *x = *y;
         }
     }
 }

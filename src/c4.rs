@@ -1,16 +1,17 @@
 mod lib;
-use crate::lib::decision_process::c4::{Move, C4};
+use crate::lib::decision_process::c4::{Move, C4, ZobHash};
 use crate::lib::decision_process::{DecisionProcess, DefaultSimulator};
 use crate::lib::decision_process::{OneStepGreedySimulator, RandomSimulator};
 use crate::lib::mcgs::expansion_traits::{
     BasicExpansion, BasicExpansionWithUniformPrior, BlockExpansionFromBasic,
 };
-use crate::lib::mcgs::graph::NoHash;
+use crate::lib::mcgs::graph::{NoHash, SafeGraph};
 use crate::lib::mcgs::graph_policy::{
     MostVisitedPolicy, PuctPolicy, RandomPolicy, UctPolicy, WeightedRandomPolicyWithExpDepth,
 };
 use crate::lib::mcgs::search_graph::{OutcomeStore, SearchGraph, SelectCountStore};
 use crate::lib::mcgs::tree::SafeTree;
+use crate::lib::mcgs::MiniMaxPropagationTask;
 use crate::lib::mcgs::Search;
 use crate::lib::{ActionWithStaticPolicy, OnlyAction};
 use std::sync::atomic::Ordering;
@@ -39,11 +40,13 @@ fn main() {
     let default_cpu = 1;
     let mut s = Search::new(
         C4::new(9, 7),
-        SafeTree::<OnlyAction<_>, f32>::new(0.0),
+        //SafeTree::<OnlyAction<_>, _>::new(0.0),
+        SafeGraph::<_, OnlyAction<_>, _>::new(0.0),
         WeightedRandomPolicyWithExpDepth::new(RandomPolicy, UctPolicy::new(2.4), 0.05, -1.5),
         //UctPolicy::new(2.4),
         BlockExpansionFromBasic::new(BasicExpansion::new(OneStepGreedySimulator)),
-        NoHash,
+        ZobHash::new(63),
+        MiniMaxPropagationTask::new(),
         0.01,
         1,
         default_cpu,
@@ -99,6 +102,7 @@ fn main() {
                     let bc = b.load(Ordering::SeqCst);
                     println!("{} {}", index, ac as f32 / (ac + bc) as f32);
                 }
+                s.search_graph().clear(node);
             }
             _ => (),
         }

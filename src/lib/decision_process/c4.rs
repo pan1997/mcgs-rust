@@ -1,6 +1,8 @@
-use crate::lib::decision_process::{DecisionProcess, Outcome, WinnableOutcome};
+use crate::lib::decision_process::{ComparableOutcome, DecisionProcess, Outcome, WinnableOutcome};
 use std::fmt::{Display, Formatter};
 use std::num::Wrapping;
+use crate::lib::mcgs::graph::Hsh;
+use rand::{thread_rng, Rng};
 
 type Player = i8;
 
@@ -213,6 +215,42 @@ impl WinnableOutcome<Player> for f32 {
             B => *self < -0.95,
             _ => *self > 0.95,
         }
+    }
+}
+
+impl ComparableOutcome<Player> for f32 {
+    fn is_better_than(&self, other: &Self, a: i8) -> bool {
+        self.reward_for_agent(a) > other.reward_for_agent(a)
+    }
+}
+
+pub(crate) struct ZobHash {
+    keys_w: Vec<u64>,
+    keys_b: Vec<u64>
+}
+
+impl ZobHash {
+    pub(crate) fn new(l: usize) -> Self {
+        ZobHash {
+            keys_w: (0..l).map(|_| thread_rng().gen()).collect(),
+            keys_b: (0..l).map(|_| thread_rng().gen()).collect()
+        }
+    }
+}
+
+impl Hsh<Board> for ZobHash {
+    type K = u64;
+
+    fn key(&self, s: &Board) -> Self::K {
+        let mut ans = 0;
+        for index in 0..self.keys_b.len() {
+            if s.white_pieces[index] {
+                ans ^= self.keys_w[index]
+            } else if s.black_pieces[index] {
+                ans ^= self.keys_b[index]
+            }
+        }
+        ans
     }
 }
 

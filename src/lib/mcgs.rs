@@ -9,7 +9,9 @@ pub(crate) mod tree;
 use graph_policy::*;
 use search_graph::*;
 
-use crate::lib::decision_process::{DecisionProcess, Distance, Outcome, SimpleMovingAverage};
+use crate::lib::decision_process::{
+    ComparableOutcome, DecisionProcess, Distance, Outcome, SimpleMovingAverage, WinnableOutcome,
+};
 use crate::lib::mcgs::expansion_traits::{BlockExpansionTrait, ExpansionTrait};
 use crate::lib::mcgs::graph::Hsh;
 use crate::lib::mcgs::SelectionResult::Expand;
@@ -28,6 +30,58 @@ pub struct ExpansionResult<O, EI, K> {
     edges: EI,
 }
 
+pub trait ExtraPropagationTask<G, N, A> {
+    fn process(&self, graph: &G, node: &N, agent: A);
+}
+
+impl<G, N, A> ExtraPropagationTask<G, N, A> for () {
+    fn process(&self, _: &G, _: &N, _: A) {}
+}
+
+pub(crate) struct MiniMaxPropagationTask<P> {
+    phantom: PhantomData<P>,
+}
+impl<P> MiniMaxPropagationTask<P> {
+    pub(crate) fn new() -> Self {
+        MiniMaxPropagationTask {
+            phantom: Default::default(),
+        }
+    }
+}
+impl<D, H, G: SearchGraph<D, H>, O, A> ExtraPropagationTask<G, G::Node, A>
+    for MiniMaxPropagationTask<(D, H, O)>
+where
+    O: WinnableOutcome<A> + ComparableOutcome<A>,
+    G::Node: OutcomeStore<O>,
+    G::Edge: OutcomeStore<O>,
+    A: Copy,
+{
+    fn process(&self, graph: &G, node: &G::Node, agent: A) {
+        let mut best_solved_score = None;
+        let mut is_solved = true;
+        for edge_index in 0..graph.children_count(node) {
+            let edge = graph.get_edge(node, edge_index);
+            if !edge.is_solved() {
+                is_solved = false;
+            } else {
+                let outcome = edge.expected_outcome();
+                if outcome.is_winning_for(agent) {
+                    best_solved_score = Some(outcome);
+                    is_solved = true;
+                    break;
+                } else if best_solved_score.is_none()
+                    || outcome.is_better_than(best_solved_score.as_ref().unwrap(), agent)
+                {
+                    best_solved_score = Some(outcome);
+                }
+            }
+        }
+        if is_solved && best_solved_score.is_some() {
+            node.mark_solved(&best_solved_score.unwrap())
+        }
+    }
+}
+
 // TODO: update this doc
 /// The first iteration of this is NOT Thread safe, as it is known that the bottleneck of
 /// AlphaZero puct is actually the expansion phase which involves neural network evaluation. A
@@ -41,13 +95,14 @@ pub struct ExpansionResult<O, EI, K> {
 /// implementation and avoids expensive safeguards to enable safe sharing of the search tree
 /// among multiple workers.
 
-pub struct Search<P, S, R, G, X, D, H> {
+pub struct Search<P, S, R, G, X, D, H, Z> {
     problem: P,
     search_graph: G,
     selection_policy: S,
     expand_operation: X,
     state_hasher: H,
     q_shorting_bound: R,
+    propagation_task: Z,
     maximum_trajectory_weight: u32,
     worker_count: u32,
     phantom: PhantomData<D>,
@@ -58,8 +113,17 @@ enum SelectionResult<N, V> {
     Propagate(N, V, u32), // The third arg is the weight
 }
 
-impl<P, S, G, X, D, H>
-    Search<P, S, <<P::Outcome as Outcome<P::Agent>>::RewardType as Distance>::NormType, G, X, D, H>
+impl<P, S, G, X, D, H, Z>
+    Search<
+        P,
+        S,
+        <<P::Outcome as Outcome<P::Agent>>::RewardType as Distance>::NormType,
+        G,
+        X,
+        D,
+        H,
+        Z,
+    >
 where
     P: DecisionProcess,
     G: SearchGraph<D, H::K>,
@@ -69,6 +133,7 @@ where
     <P::Outcome as Outcome<P::Agent>>::RewardType: Distance,
     P::Outcome: SimpleMovingAverage,
     H: Hsh<P::State>,
+    Z: ExtraPropagationTask<G, G::Node, P::Agent>,
 {
     pub(crate) fn new(
         problem: P,
@@ -76,6 +141,7 @@ where
         selection_policy: S,
         expand_operation: X,
         state_hasher: H,
+        propagation_task: Z,
         q_shorting_bound: <<P::Outcome as Outcome<P::Agent>>::RewardType as Distance>::NormType,
         maximum_trajectory_weight: u32,
         worker_count: u32,
@@ -87,6 +153,7 @@ where
             expand_operation,
             state_hasher,
             q_shorting_bound,
+            propagation_task,
             maximum_trajectory_weight,
             worker_count,
             phantom: PhantomData,
@@ -127,7 +194,7 @@ where
         &self,
         root: &'a G::Node,
         state: &mut P::State,
-        trajectory: &mut Vec<(&'a G::Node, &'a G::Edge)>,
+        trajectory: &mut Vec<(&'a G::Node, &'a G::Edge, P::Agent)>,
         undo_stack: &mut Vec<P::UndoAction>,
     ) -> SelectionResult<&'a G::Node, P::Outcome> {
         let mut node = root;
@@ -153,7 +220,7 @@ where
 
             let edge_selection_count = edge.selection_count();
 
-            trajectory.push((node, edge));
+            trajectory.push((node, edge, agent));
             undo_stack.push(self.problem.transition(state, &edge));
 
             if self.search_graph.is_dangling(edge) {
@@ -179,7 +246,7 @@ where
                     .reward_for_agent(agent)
                     .distance(&edge.expected_outcome().reward_for_agent(agent));
                 if delta > self.q_shorting_bound {
-                    println!("Shorting");
+                    //println!("Shorting");
                     let node_selection_count = next_node.selection_count();
                     let expected_outcome = next_node.expected_outcome();
                     next_node.unlock();
@@ -226,9 +293,10 @@ where
         node.unlock();
         // TODO: this might create races
         new_node.lock();
-        new_node.add_sample(&expansion_result.outcome, 1);
         if self.search_graph.is_leaf(new_node) {
-            new_node.mark_solved()
+            new_node.mark_solved(&expansion_result.outcome);
+        } else {
+            new_node.add_sample(&expansion_result.outcome, 1);
         }
         new_node.increment_selection_count();
         new_node.unlock();
@@ -237,12 +305,17 @@ where
 
     fn propagate(
         &self,
-        trajectory: &mut Vec<(&G::Node, &G::Edge)>,
+        trajectory: &mut Vec<(&G::Node, &G::Edge, P::Agent)>,
         node: &G::Node, // This is needed later for alpha beta
         mut outcome: P::Outcome,
         mut weight: u32,
     ) {
-        while let Some((node, edge)) = trajectory.pop() {
+        let mut last_terminal_outcome = if node.is_solved() {
+            Some(node.expected_outcome())
+        } else {
+            None
+        };
+        while let Some((node, edge, agent)) = trajectory.pop() {
             node.lock();
             let nc = node.selection_count();
             let nd = self.search_graph.children_count(node);
@@ -253,8 +326,21 @@ where
             } else {
                 weight
             };
-            edge.add_sample(&outcome, w);
+            if last_terminal_outcome.is_some() {
+                edge.mark_solved(&last_terminal_outcome.unwrap());
+            } else {
+                edge.add_sample(&outcome, w);
+            }
             node.add_sample(&outcome, w);
+
+            self.propagation_task
+                .process(&self.search_graph, node, agent);
+
+            last_terminal_outcome = if node.is_solved() {
+                Some(node.expected_outcome())
+            } else {
+                None
+            };
             node.unlock();
         }
     }
@@ -269,7 +355,7 @@ where
 
         let (node, outcome, weight) = match s {
             SelectionResult::Expand => {
-                let (n, e) = trajectory.last().unwrap();
+                let (n, e, _) = trajectory.last().unwrap();
                 self.expand(*n, *e, state)
             }
             SelectionResult::Propagate(node, outcome, weight) => (node, outcome, weight),
@@ -323,7 +409,7 @@ where
         for (expansion_result, trajectory_index) in expansion_results.into_iter().zip(inverse_map) {
             let (trajectory, _) = &mut trajectories[trajectory_index];
 
-            let (_, e) = trajectory.last().unwrap();
+            let (_, e, _) = trajectory.last().unwrap();
             let node =
                 self.search_graph
                     .add_child(expansion_result.state_key, e, expansion_result.edges);
@@ -433,6 +519,7 @@ where
         X: Sync,
         D: Sync,
         H: Sync,
+        Z: Sync,
     {
         let start_time = Instant::now();
         let start_count = root.selection_count();
@@ -531,16 +618,16 @@ mod tests {
     use super::*;
     use crate::lib::decision_process::c4::C4;
     use crate::lib::decision_process::graph_dp::tests::{problem1, problem2, problem3, DSim};
+    use crate::lib::decision_process::graph_dp::GHash;
     use crate::lib::decision_process::DefaultSimulator;
     use crate::lib::mcgs::expansion_traits::{
         BasicExpansion, BasicExpansionWithUniformPrior, BlockExpansionFromBasic,
     };
+    use crate::lib::mcgs::graph::tests::print_graph;
     use crate::lib::mcgs::graph::{NoHash, SafeGraph};
     use crate::lib::mcgs::tree::tests::print_tree;
     use crate::lib::mcgs::tree::SafeTree;
     use crate::lib::{ActionWithStaticPolicy, OnlyAction};
-    use crate::lib::decision_process::graph_dp::GHash;
-    use crate::lib::mcgs::graph::tests::print_graph;
 
     #[test]
     fn random() {
@@ -550,6 +637,7 @@ mod tests {
             RandomPolicy,
             BasicExpansion::new(DSim),
             NoHash,
+            (),
             0.01,
             1,
             1,
@@ -572,6 +660,7 @@ mod tests {
             UctPolicy::new(2.4),
             BasicExpansion::new(DSim),
             NoHash,
+            (),
             0.01,
             1,
             1,
@@ -594,6 +683,7 @@ mod tests {
             UctPolicy::new(2.4),
             BlockExpansionFromBasic::new(BasicExpansion::new(DSim)),
             NoHash,
+            (),
             0.01,
             1,
             1,
@@ -616,6 +706,7 @@ mod tests {
             PuctPolicy::new(2.0, 2.4),
             BasicExpansionWithUniformPrior::new(DSim),
             NoHash,
+            (),
             0.01,
             1,
             1,
@@ -638,6 +729,7 @@ mod tests {
             PuctPolicy::new(2000.0, 2.4),
             BasicExpansionWithUniformPrior::new(DSim),
             NoHash,
+            (),
             0.01,
             1,
             1,
@@ -660,6 +752,7 @@ mod tests {
             UctPolicy::new(2.4),
             BasicExpansion::new(DefaultSimulator),
             NoHash,
+            (),
             0.01,
             1,
             1,
@@ -681,6 +774,7 @@ mod tests {
             UctPolicy::new(2.4),
             BasicExpansion::new(DSim),
             NoHash,
+            (),
             0.01,
             1,
             1,
@@ -705,6 +799,7 @@ mod tests {
             UctPolicy::new(2.4),
             BasicExpansion::new(DSim),
             GHash,
+            (),
             0.01,
             1,
             1,
@@ -717,6 +812,31 @@ mod tests {
             s.one_iteration(&n, state);
         }
         print_graph(&s.search_graph, &n, 0, true);
+        println!()
+    }
+
+    #[test]
+    fn mmax_test() {
+        let s = Search::new(
+            problem3(),
+            SafeTree::<OnlyAction<_>, _>::new(vec![0.0, 0.0]),
+            UctPolicy::new(2.4),
+            BasicExpansion::new(DSim),
+            NoHash,
+            MiniMaxPropagationTask::new(),
+            0.01,
+            1,
+            1,
+        );
+
+        let state = &mut s.problem.start_state();
+        let n = s.get_new_node(state);
+        print_tree(&s.search_graph, &n, 0, true);
+        for _ in 0..40 {
+            s.one_iteration(&n, state);
+        }
+        print_tree(&s.search_graph, &n, 0, true);
+        s.one_iteration(&n, state);
         println!()
     }
 }

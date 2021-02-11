@@ -25,12 +25,19 @@ impl<O> Internal<O> {
     }
 }
 
-impl<O: SimpleMovingAverage> Internal<O> {
+impl<O: SimpleMovingAverage + Clone> Internal<O> {
     pub(crate) fn add_sample(&mut self, x: &O, weight: u32) {
         if !self.is_solved() {
             self.sample_count += weight;
             self.expected_sample
                 .update_with_moving_average(x, weight, self.sample_count)
+        }
+    }
+
+    pub(crate) fn fix(&mut self, x: &O) {
+        if !self.is_solved() {
+            self.expected_sample = x.clone();
+            self.mark_solved();
         }
     }
 }

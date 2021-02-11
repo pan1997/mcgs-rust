@@ -54,8 +54,8 @@ impl<I, O: Clone + SimpleMovingAverage> OutcomeStore<O> for Node<O, I> {
         unsafe { &*self.internal.get() }.sample_count
     }
 
-    fn mark_solved(&self) {
-        unsafe { &mut *self.internal.get() }.mark_solved()
+    fn mark_solved(&self, outcome: &O) {
+        unsafe { &mut *self.internal.get() }.fix(outcome)
     }
 }
 
@@ -65,7 +65,7 @@ impl<I, O: Clone + SimpleMovingAverage> OutcomeStore<O> for Edge<O, I> {
     }
 
     fn is_solved(&self) -> bool {
-        panic!("Edge doesn't support solution storing")
+        unsafe { &*self.internal.get() }.is_solved()
     }
 
     fn add_sample(&self, outcome: &O, weight: u32) {
@@ -76,8 +76,8 @@ impl<I, O: Clone + SimpleMovingAverage> OutcomeStore<O> for Edge<O, I> {
         unsafe { &*self.internal.get() }.sample_count
     }
 
-    fn mark_solved(&self) {
-        panic!("Edge doesn't support solution storing")
+    fn mark_solved(&self, outcome: &O) {
+        unsafe { &mut *self.internal.get() }.fix(outcome)
     }
 }
 

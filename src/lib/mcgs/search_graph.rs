@@ -7,7 +7,7 @@ pub trait OutcomeStore<O> {
     // Need to use atomics/mutexes
     fn add_sample(&self, outcome: &O, weight: u32);
     fn sample_count(&self) -> u32;
-    fn mark_solved(&self);
+    fn mark_solved(&self, outcome: &O);
 }
 
 pub trait SelectCountStore {
