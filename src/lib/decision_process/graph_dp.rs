@@ -83,6 +83,10 @@ impl crate::lib::decision_process::WinnableOutcome<Agent> for Vec<f32> {
         let s = self.reward_for_agent(a);
         s >= 1.0
     }
+
+    fn is_losing_for(&self, a: u32) -> bool {
+        false
+    }
 }
 
 impl crate::lib::decision_process::ComparableOutcome<Agent> for Vec<f32> {

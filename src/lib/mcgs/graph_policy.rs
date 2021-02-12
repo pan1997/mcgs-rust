@@ -1,10 +1,9 @@
-use crate::lib::decision_process::{DecisionProcess, Outcome};
+use crate::lib::decision_process::{DecisionProcess, Outcome, WinnableOutcome};
 use crate::lib::mcgs::search_graph::{
     OutcomeStore, PriorPolicyStore, SearchGraph, SelectCountStore,
 };
 use num::ToPrimitive;
 use rand::{thread_rng, Rng};
-use std::sync::atomic::{AtomicU32, Ordering};
 
 pub trait SelectionPolicy<D, P, G, H>
 where
@@ -67,6 +66,39 @@ impl MostVisitedPolicy {
     }
 }
 
+pub struct PvPolicy;
+
+impl<D, P, G, H> SelectionPolicy<D, P, G, H> for PvPolicy
+where
+    P: DecisionProcess,
+    G: SearchGraph<D, H>,
+    P::Outcome: WinnableOutcome<P::Agent>,
+    G::Edge: SelectCountStore + OutcomeStore<P::Outcome>,
+{
+    fn select(
+        &self,
+        _: &P,
+        store: &G,
+        node: &<G as SearchGraph<D, H>>::Node,
+        agent: <P as DecisionProcess>::Agent,
+        _: u32,
+    ) -> u32 {
+        let edge_count = store.children_count(node);
+        debug_assert!(edge_count > 0);
+        let mut max_count = 0;
+        let mut best_edge = 0;
+        for edge_index in 0..edge_count {
+            let edge = store.get_edge(node, edge_index);
+
+            if edge.selection_count() > max_count && !edge.expected_outcome().is_losing_for(agent) {
+                best_edge = edge_index;
+                max_count = edge.selection_count()
+            }
+        }
+        best_edge
+    }
+}
+
 pub struct UctPolicy {
     exploration_weight: f32,
 }
@@ -105,6 +137,11 @@ where
 
             let edge_selection_count = edge.selection_count();
             if edge_selection_count == 0 {
+                return edge_index;
+            }
+            // No need to iterate over other edges if we have one winning edge
+            // TODO: generalise this
+            if q >= 1.0 {
                 return edge_index;
             }
 
@@ -159,6 +196,13 @@ where
                 .unwrap();
 
             let edge_selection_count = edge.selection_count();
+            if edge_selection_count == 0 {
+                return edge_index;
+            }
+            // TODO: generalise this
+            if q >= 1.0 {
+                return edge_index;
+            }
 
             let p_uct = self.puct_init
                 + ((node_selection_count + self.puct_base + 1.0) / self.puct_base).ln();
@@ -205,8 +249,6 @@ pub struct WeightedRandomPolicyWithExpDepth<P1, P2> {
     p: P2,
     epsilon: f32,
     factor: f32,
-    pub(crate) c1: Vec<AtomicU32>,
-    pub(crate) c2: Vec<AtomicU32>,
 }
 
 impl<P1, P2> WeightedRandomPolicyWithExpDepth<P1, P2> {
@@ -216,8 +258,6 @@ impl<P1, P2> WeightedRandomPolicyWithExpDepth<P1, P2> {
             p_epsilon: p1,
             epsilon: e,
             factor: f,
-            c1: (0..100).map(|_| AtomicU32::new(0)).collect(),
-            c2: (0..100).map(|_| AtomicU32::new(0)).collect(),
         }
     }
 }
@@ -233,10 +273,8 @@ where
         let w: f32 = thread_rng().gen();
         let depth_factor = (self.factor * depth as f32).exp();
         if w < self.epsilon * depth_factor {
-            self.c1[depth as usize].fetch_add(1, Ordering::SeqCst);
             self.p_epsilon.select(problem, store, node, agent, depth)
         } else {
-            self.c2[depth as usize].fetch_add(1, Ordering::SeqCst);
             self.p.select(problem, store, node, agent, depth)
         }
     }

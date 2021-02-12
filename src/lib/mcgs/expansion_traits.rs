@@ -1,7 +1,6 @@
 use crate::lib::decision_process::{DecisionProcess, Simulator};
 use crate::lib::mcgs::ExpansionResult;
 use crate::lib::{ActionWithStaticPolicy, OnlyAction};
-use parking_lot::Mutex;
 
 pub trait ExpansionTrait<P: DecisionProcess, I, K> {
     type OutputIter: Iterator<Item = I>;

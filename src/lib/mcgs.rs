@@ -15,7 +15,7 @@ use crate::lib::decision_process::{
 use crate::lib::mcgs::expansion_traits::{BlockExpansionTrait, ExpansionTrait};
 use crate::lib::mcgs::graph::Hsh;
 use crate::lib::mcgs::SelectionResult::Expand;
-use std::cmp::min;
+use colored::{ColoredString, Colorize};
 use std::fmt::Display;
 use std::marker::PhantomData;
 use std::ops::Deref;
@@ -30,12 +30,12 @@ pub struct ExpansionResult<O, EI, K> {
     edges: EI,
 }
 
-pub trait ExtraPropagationTask<G, N, A> {
-    fn process(&self, graph: &G, node: &N, agent: A);
+pub trait ExtraPropagationTask<G, N, O, A> {
+    fn process(&self, graph: &G, node: &N, outcome: &O, agent: A);
 }
 
-impl<G, N, A> ExtraPropagationTask<G, N, A> for () {
-    fn process(&self, _: &G, _: &N, _: A) {}
+impl<G, N, O, A> ExtraPropagationTask<G, N, O, A> for () {
+    fn process(&self, _: &G, _: &N, _: &O, _: A) {}
 }
 
 pub(crate) struct MiniMaxPropagationTask<P> {
@@ -48,16 +48,15 @@ impl<P> MiniMaxPropagationTask<P> {
         }
     }
 }
-impl<D, H, G: SearchGraph<D, H>, O, A> ExtraPropagationTask<G, G::Node, A>
-    for MiniMaxPropagationTask<(D, H, O)>
+impl<D, H, G: SearchGraph<D, H>, O, A> ExtraPropagationTask<G, G::Node, O, A>
+    for MiniMaxPropagationTask<(D, H)>
 where
     O: WinnableOutcome<A> + ComparableOutcome<A>,
-    G::Node: OutcomeStore<O>,
-    G::Edge: OutcomeStore<O>,
+    G::Node: OutcomeStore<O> + SelectCountStore,
+    G::Edge: OutcomeStore<O> + SelectCountStore,
     A: Copy,
 {
-    fn process(&self, graph: &G, node: &G::Node, agent: A) {
-        let mut best_solved_score = None;
+    fn process(&self, graph: &G, node: &G::Node, outcome: &O, agent: A) {
         let mut is_solved = true;
         for edge_index in 0..graph.children_count(node) {
             let edge = graph.get_edge(node, edge_index);
@@ -66,18 +65,16 @@ where
             } else {
                 let outcome = edge.expected_outcome();
                 if outcome.is_winning_for(agent) {
-                    best_solved_score = Some(outcome);
                     is_solved = true;
                     break;
-                } else if best_solved_score.is_none()
-                    || outcome.is_better_than(best_solved_score.as_ref().unwrap(), agent)
-                {
-                    best_solved_score = Some(outcome);
                 }
             }
         }
-        if is_solved && best_solved_score.is_some() {
-            node.mark_solved(&best_solved_score.unwrap())
+
+        if is_solved {
+            // should not solidify node as it messes with the transposition detection
+            // technically no. it shouldn't mess with it
+            node.mark_solved(outcome)
         }
     }
 }
@@ -133,7 +130,7 @@ where
     <P::Outcome as Outcome<P::Agent>>::RewardType: Distance,
     P::Outcome: SimpleMovingAverage,
     H: Hsh<P::State>,
-    Z: ExtraPropagationTask<G, G::Node, P::Agent>,
+    Z: ExtraPropagationTask<G, G::Node, P::Outcome, P::Agent>,
 {
     pub(crate) fn new(
         problem: P,
@@ -237,30 +234,34 @@ where
             // node before locking another.
             node.unlock();
 
+            // Ignoring shorting for now, as it introduces weird behaviour
             // Check if this is a transposition (next_node has extra selections)
+            /*
             if next_node.selection_count() > edge_selection_count {
                 // Next node always has some samples, as we have moved away from dangling nodes
                 // to dangling edges.
+                //let diff = next_node.expected_outcome()
                 let delta = next_node
                     .expected_outcome()
                     .reward_for_agent(agent)
                     .distance(&edge.expected_outcome().reward_for_agent(agent));
                 if delta > self.q_shorting_bound {
-                    //println!("Shorting");
                     let node_selection_count = next_node.selection_count();
                     let expected_outcome = next_node.expected_outcome();
                     next_node.unlock();
                     return SelectionResult::Propagate(
                         next_node,
                         expected_outcome,
-                        min(
-                            self.maximum_trajectory_weight,
-                            node_selection_count - edge_selection_count,
-                        ),
+                        //  This needs to be fixed
+                        node_selection_count - edge_selection_count
+                        //min(
+                          //  self.maximum_trajectory_weight,
+                          //  node_selection_count - edge_selection_count,
+                        //),
                     );
                 }
             }
-
+            */
             // We need an additional terminal check, as we can mark non leaf nodes as terminal
             if next_node.is_solved() {
                 next_node.unlock();
@@ -290,9 +291,8 @@ where
         let new_node =
             self.search_graph
                 .add_child(expansion_result.state_key, edge, expansion_result.edges);
-        node.unlock();
-        // TODO: this might create races
         new_node.lock();
+        node.unlock();
         if self.search_graph.is_leaf(new_node) {
             new_node.mark_solved(&expansion_result.outcome);
         } else {
@@ -310,38 +310,42 @@ where
         mut outcome: P::Outcome,
         mut weight: u32,
     ) {
-        let mut last_terminal_outcome = if node.is_solved() {
-            Some(node.expected_outcome())
-        } else {
-            None
-        };
+        //let mut last_terminal_outcome = if node.is_solved() {
+        //    Some(node.expected_outcome())
+        //} else {
+        //    None
+        //};
+        let mut last_node_terminal = node.is_solved();
+        let mut depth = 0;
         while let Some((node, edge, agent)) = trajectory.pop() {
             node.lock();
-            let nc = node.selection_count();
-            let nd = self.search_graph.children_count(node);
-            let w = if nc > nd * 16 {
+
+            // scale it with depth, so that deeper lines are weighed more
+            let w = if depth > 8 {
+                weight * 8
+            } else if depth > 6 {
                 weight * 4
-            } else if nc > nd * 4 {
+            } else if depth > 4 {
                 weight * 2
             } else {
                 weight
             };
-            if last_terminal_outcome.is_some() {
-                edge.mark_solved(&last_terminal_outcome.unwrap());
+            //let w = weight;
+            if last_node_terminal {
+                edge.mark_solved(&outcome);
             } else {
                 edge.add_sample(&outcome, w);
             }
             node.add_sample(&outcome, w);
 
             self.propagation_task
-                .process(&self.search_graph, node, agent);
+                .process(&self.search_graph, node, &outcome, agent);
 
-            last_terminal_outcome = if node.is_solved() {
-                Some(node.expected_outcome())
-            } else {
-                None
-            };
+            if last_node_terminal && !node.is_solved() {
+                last_node_terminal = false
+            }
             node.unlock();
+            depth += 1;
         }
     }
 
@@ -471,7 +475,9 @@ where
     where
         X: BlockExpansionTrait<P, D, H::K> + ExpansionTrait<P, D, H::K>,
         P::Action: Display,
-        P::Outcome: Display,
+        P::Agent: Display,
+        P::Outcome: WinnableOutcome<P::Agent> + Display,
+        <P::Outcome as Outcome<P::Agent>>::RewardType: Display,
     {
         let start_time = Instant::now();
         let start_count = root.selection_count();
@@ -489,7 +495,14 @@ where
                 if index >= next_pv {
                     next_pv += 1;
                     let mut v = vec![];
-                    self.print_pv(root, Some(start_time), Some(start_count), &mut v, 256);
+                    self.print_pv(
+                        root,
+                        state,
+                        Some(start_time),
+                        Some(start_count),
+                        &mut v,
+                        256,
+                    );
                 }
             }
         };
@@ -510,7 +523,9 @@ where
         P::State: Clone + Send,
         X: ExpansionTrait<P, D, H::K> + BlockExpansionTrait<P, D, H::K>,
         P::Action: Display,
-        P::Outcome: Display,
+        P::Agent: Display,
+        P::Outcome: WinnableOutcome<P::Agent> + Display,
+        <P::Outcome as Outcome<P::Agent>>::RewardType: Display,
         <<P::Outcome as Outcome<P::Agent>>::RewardType as Distance>::NormType: Sync,
         G::Node: Sync,
         P: Sync,
@@ -539,10 +554,18 @@ where
                     }
                 });
             }
+            let mut pv_state = state.clone();
             while !self.end_search(start_time, root, node_limit, time_limit, confidence, 32) {
                 sleep(Duration::from_millis(500));
                 let mut v = vec![];
-                self.print_pv(root, Some(start_time), Some(start_count), &mut v, 1024);
+                self.print_pv(
+                    root,
+                    &mut pv_state,
+                    Some(start_time),
+                    Some(start_count),
+                    &mut v,
+                    1024,
+                );
             }
         })
         .unwrap();
@@ -552,16 +575,65 @@ where
     pub(crate) fn print_pv<'a>(
         &self,
         mut root: &'a G::Node,
+        state: &mut P::State,
         start_time: Option<Instant>,
         start_count: Option<u32>,
         trajectory: &mut Vec<(&'a G::Node, &'a G::Edge)>,
         filter: u32,
     ) where
         P::Action: Display,
-        P::Outcome: Display,
+        P::Agent: Display,
+        P::Outcome: WinnableOutcome<P::Agent> + Display,
+        <P::Outcome as Outcome<P::Agent>>::RewardType: Display,
     {
         // No locks used here as this fn only reads
         let selection_count = root.selection_count() - start_count.or(Some(0)).unwrap();
+
+        let mut sl = 0;
+        let mut stack = vec![];
+        while !self.search_graph.is_leaf(root) {
+            let agent = self.problem.agent_to_act(state);
+            let best_edge_index =
+                PvPolicy.select(&self.problem, &self.search_graph, root, agent, 0);
+            //MostVisitedPolicy.select(&self.problem, &self.search_graph,
+            //root);
+            let edge = self.search_graph.get_edge(root, best_edge_index);
+            if self.search_graph.is_dangling(edge) {
+                break;
+            }
+            let action: &P::Action = &edge;
+            stack.push(self.problem.transition(state, action));
+            if root.selection_count() > filter || root.is_solved() {
+                sl += 1;
+                let es = edge.selection_count();
+                let rs = root.selection_count();
+                let confidence = (if es == u32::MAX {
+                    100
+                } else {
+                    es as u64 * 100 / rs as u64
+                }) as u32;
+                let entry = if root.is_solved() {
+                    format!(
+                        "[{}, {:.2}]-> ",
+                        action,
+                        root.expected_outcome() //.reward_for_agent(agent)
+                    )
+                } else {
+                    format!(
+                        "{{{}, {}k, {:.2}}}-> ",
+                        action,
+                        es / 1000,
+                        root.expected_outcome().reward_for_agent(agent)
+                    )
+                };
+                print!("{}", color_from_confidence(&entry, confidence));
+            } else {
+                print!("{{?}}-> ");
+            }
+            trajectory.push((root, edge));
+            root = self.search_graph.get_target_node(edge);
+        }
+        println!();
         print!("{}kN ", selection_count / 1000);
         if start_time.is_some() {
             let elapsed = start_time.unwrap().elapsed().as_millis();
@@ -571,35 +643,10 @@ where
                 selection_count as u128 / (elapsed + 1)
             );
         }
-        let mut sl = 0;
-        while !self.search_graph.is_leaf(root) {
-            let best_edge_index = MostVisitedPolicy.select(&self.problem, &self.search_graph, root);
-            let edge = self.search_graph.get_edge(root, best_edge_index);
-            if self.search_graph.is_dangling(edge) {
-                break;
-            }
-            let action: &P::Action = &edge;
-            if root.selection_count() > filter {
-                sl += 1;
-                print!(
-                    "{{{}, {}k({})%, {:.2}",
-                    action,
-                    edge.selection_count() / 1000,
-                    edge.selection_count() * 100 / (root.selection_count() + 1), // avoid nast divide by zero
-                    root.expected_outcome()
-                );
-                if root.is_solved() {
-                    print!("S}}-> ");
-                } else {
-                    print!("}}-> ");
-                }
-            } else {
-                print!("{{?}}-> ");
-            }
-            trajectory.push((root, edge));
-            root = self.search_graph.get_target_node(edge);
+        println!(" depth {}/{}", sl, trajectory.len());
+        while let Some(u) = stack.pop() {
+            self.problem.undo_transition(state, u);
         }
-        println!("| depth {}/{}", sl, trajectory.len());
     }
 }
 
@@ -611,6 +658,27 @@ impl<K: Clone, O: Clone, EI: Clone> Clone for ExpansionResult<K, O, EI> {
             edges: self.edges.clone(),
         }
     }
+}
+
+fn color_from_confidence(s: &str, c: u32) -> ColoredString {
+    /*
+    let part = (c * 255 / 100) as u8;
+    s.truecolor(255 - part, part, 0)*/
+    if c < 50 {
+        s.red()
+    } else if c < 65 {
+        s.yellow()
+    } else if c < 80 {
+        s.green()
+    } else if c < 90 {
+        s.cyan()
+    } else if c < 95 {
+        s.blue()
+    } else {
+        s.magenta()
+    } // else {
+      //   s.white()
+      //}
 }
 
 #[cfg(test)]

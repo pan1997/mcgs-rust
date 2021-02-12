@@ -39,6 +39,7 @@ pub trait SimpleMovingAverage {
 pub trait Distance {
     type NormType: PartialOrd;
     fn distance(&self, other: &Self) -> Self::NormType;
+    fn translate(&self, direction: &Self, x: Self::NormType, y: Self::NormType) -> Self;
 }
 
 pub trait Simulator<D: DecisionProcess> {
@@ -48,19 +49,21 @@ pub trait Simulator<D: DecisionProcess> {
 /// Defines three categories of outcomes for each agent, win, loss and draw.
 pub trait WinnableOutcome<Agent>: Outcome<Agent> {
     fn is_winning_for(&self, a: Agent) -> bool;
+    fn is_losing_for(&self, a: Agent) -> bool;
 }
 
 pub trait ComparableOutcome<Agent>: Outcome<Agent> {
     fn is_better_than(&self, other: &Self, a: Agent) -> bool;
 }
-
+/*
 impl<T: Copy> Outcome<()> for T {
     type RewardType = T;
 
     fn reward_for_agent(&self, _: ()) -> Self::RewardType {
         *self
     }
-}
+}*/
+
 impl SimpleMovingAverage for f32 {
     fn update_with_moving_average(&mut self, o: &Self, x: u32, y: u32) {
         *self += Self::from_u32(x).unwrap() * (*o - *self) / Self::from_u32(y).unwrap()
@@ -177,7 +180,19 @@ impl Distance for f32 {
     fn distance(&self, other: &Self) -> Self::NormType {
         (*self - other).abs()
     }
+
+    fn translate(&self, direction: &Self, x: Self::NormType, y: Self::NormType) -> Self {
+        *self + *direction * y / x
+    }
 }
+/*
+impl Distance for f64 {
+    type NormType = f64;
+
+    fn distance(&self, other: &Self) -> Self::NormType {
+        (*self - other).abs()
+    }
+}*/
 
 pub(crate) mod c4;
 pub(crate) mod graph_dp;

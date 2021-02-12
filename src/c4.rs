@@ -1,5 +1,5 @@
 mod lib;
-use crate::lib::decision_process::c4::{Move, C4, ZobHash};
+use crate::lib::decision_process::c4::{Move, ZobHash, C4};
 use crate::lib::decision_process::{DecisionProcess, DefaultSimulator};
 use crate::lib::decision_process::{OneStepGreedySimulator, RandomSimulator};
 use crate::lib::mcgs::expansion_traits::{
@@ -7,7 +7,8 @@ use crate::lib::mcgs::expansion_traits::{
 };
 use crate::lib::mcgs::graph::{NoHash, SafeGraph};
 use crate::lib::mcgs::graph_policy::{
-    MostVisitedPolicy, PuctPolicy, RandomPolicy, UctPolicy, WeightedRandomPolicyWithExpDepth,
+    MostVisitedPolicy, PuctPolicy, PvPolicy, RandomPolicy, SelectionPolicy, UctPolicy,
+    WeightedRandomPolicyWithExpDepth,
 };
 use crate::lib::mcgs::search_graph::{OutcomeStore, SearchGraph, SelectCountStore};
 use crate::lib::mcgs::tree::SafeTree;
@@ -37,15 +38,23 @@ fn main() {
         0.01,
         1,
     );*/
-    let default_cpu = 1;
+    let default_cpu = 8;
     let mut s = Search::new(
         C4::new(9, 7),
         //SafeTree::<OnlyAction<_>, _>::new(0.0),
-        SafeGraph::<_, OnlyAction<_>, _>::new(0.0),
-        WeightedRandomPolicyWithExpDepth::new(RandomPolicy, UctPolicy::new(2.4), 0.05, -1.5),
+        SafeGraph::new(0.0), // The values are upper bounds,
+        //WeightedRandomPolicyWithExpDepth::new(RandomPolicy, UctPolicy::new(2.4), 0.05, -1.5),
+        WeightedRandomPolicyWithExpDepth::new(
+            RandomPolicy,
+            PuctPolicy::new(2500.0, 2.4),
+            0.05,
+            -1.5,
+        ),
         //UctPolicy::new(2.4),
-        BlockExpansionFromBasic::new(BasicExpansion::new(OneStepGreedySimulator)),
+        //BlockExpansionFromBasic::new(BasicExpansion::new(OneStepGreedySimulator)),
+        BlockExpansionFromBasic::new(BasicExpansionWithUniformPrior::new(OneStepGreedySimulator)),
         ZobHash::new(63),
+        //NoHash,
         MiniMaxPropagationTask::new(),
         0.01,
         1,
@@ -77,9 +86,10 @@ fn main() {
                 let node = s.get_new_node(&mut state); // search_graph().create_node(&state);
                 let elapsed =
                     s.start_parallel(&node, &state, None, Some(time_limit), Some(97), false);
+                let agent = s.problem().agent_to_act(&state);
                 let best_edge = s.search_graph().get_edge(
                     &node,
-                    MostVisitedPolicy.select(s.problem(), s.search_graph(), &node),
+                    PvPolicy.select(s.problem(), s.search_graph(), &node, agent, 0), //MostVisitedPolicy.select(s.problem(), s.search_graph(), &node),
                 );
                 let best_move: &Move = best_edge;
                 let score: f32 = node.expected_outcome();
@@ -91,17 +101,17 @@ fn main() {
                     elapsed
                 );
                 //println!("p1: {:?} p2: {:?}", s.tree_policy().c1, s.tree_policy().c2);
-                for (index, (a, b)) in s
+                /*for (index, (a, b)) in s
                     .tree_policy()
                     .c1
                     .iter()
                     .zip(s.tree_policy().c2.iter())
                     .enumerate()
-                {
-                    let ac = a.load(Ordering::SeqCst);
-                    let bc = b.load(Ordering::SeqCst);
-                    println!("{} {}", index, ac as f32 / (ac + bc) as f32);
-                }
+                //{
+                //   let ac = a.load(Ordering::SeqCst);
+                //    let bc = b.load(Ordering::SeqCst);
+                //    //println!("{} {}", index, ac as f32 / (ac + bc) as f32);
+                //}*/
                 s.search_graph().clear(node);
             }
             _ => (),

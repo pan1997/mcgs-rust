@@ -1,8 +1,8 @@
 use crate::lib::decision_process::{ComparableOutcome, DecisionProcess, Outcome, WinnableOutcome};
-use std::fmt::{Display, Formatter};
-use std::num::Wrapping;
 use crate::lib::mcgs::graph::Hsh;
 use rand::{thread_rng, Rng};
+use std::fmt::{Display, Formatter};
+use std::num::Wrapping;
 
 type Player = i8;
 
@@ -216,6 +216,10 @@ impl WinnableOutcome<Player> for f32 {
             _ => *self > 0.95,
         }
     }
+
+    fn is_losing_for(&self, a: i8) -> bool {
+        self.is_winning_for(opponent(a))
+    }
 }
 
 impl ComparableOutcome<Player> for f32 {
@@ -226,14 +230,14 @@ impl ComparableOutcome<Player> for f32 {
 
 pub(crate) struct ZobHash {
     keys_w: Vec<u64>,
-    keys_b: Vec<u64>
+    keys_b: Vec<u64>,
 }
 
 impl ZobHash {
     pub(crate) fn new(l: usize) -> Self {
         ZobHash {
             keys_w: (0..l).map(|_| thread_rng().gen()).collect(),
-            keys_b: (0..l).map(|_| thread_rng().gen()).collect()
+            keys_b: (0..l).map(|_| thread_rng().gen()).collect(),
         }
     }
 }
@@ -253,7 +257,7 @@ impl Hsh<Board> for ZobHash {
         ans
     }
 }
-
+/*
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -369,3 +373,4 @@ mod tests {
         node_distribution(s.store(), &node);
     }
 }
+*/

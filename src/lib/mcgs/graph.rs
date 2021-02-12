@@ -7,12 +7,14 @@ use crate::lib::{ActionWithStaticPolicy, OnlyAction};
 use dashmap::DashMap;
 use parking_lot::lock_api::RawMutex;
 use parking_lot::RawMutex as Mutex;
-use std::cell::{RefCell, UnsafeCell};
+use std::cell::UnsafeCell;
 use std::hash::Hash;
 use std::ops::Deref;
 use std::sync::Arc;
 
-// TODO: test this
+// Graph as of now suffers from stability issues
+// the value of nodes has a lot of random flail
+
 pub struct Node<O, I> {
     lock: Mutex,
     internal: UnsafeCell<Internal<O>>,

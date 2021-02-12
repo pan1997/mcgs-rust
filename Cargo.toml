@@ -15,6 +15,7 @@ parking_lot = "*"
 text_io = "*"
 crossbeam = "*"
 dashmap = "*"
+colored = "*"
 
 [dependencies.rand]
 version = "*"
