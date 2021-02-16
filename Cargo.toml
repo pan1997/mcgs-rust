@@ -24,3 +24,7 @@ features = ["small_rng"]
 [[bin]]
 name = "c4"
 path = "src/c4.rs"
+
+[[bin]]
+name = "hex"
+path = "src/hex.rs"

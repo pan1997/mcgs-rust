@@ -36,10 +36,12 @@ pub trait SimpleMovingAverage {
     fn reset(&mut self, o: &Self);
 }
 
-pub trait Distance {
+pub trait Distance: Sized {
     type NormType: PartialOrd;
-    fn distance(&self, other: &Self) -> Self::NormType;
-    fn translate(&self, direction: &Self, x: Self::NormType, y: Self::NormType) -> Self;
+    fn norm(&self) -> Self::NormType;
+    fn sub(&self, other: &Self) -> Self;
+    fn clip(&mut self, n: Self::NormType);
+    fn scale(&self, w: Self::NormType) -> Self;
 }
 
 pub trait Simulator<D: DecisionProcess> {
@@ -66,7 +68,17 @@ impl<T: Copy> Outcome<()> for T {
 
 impl SimpleMovingAverage for f32 {
     fn update_with_moving_average(&mut self, o: &Self, x: u32, y: u32) {
-        *self += Self::from_u32(x).unwrap() * (*o - *self) / Self::from_u32(y).unwrap()
+        *self += (x as f32) * (*o - *self) / (y as f32)
+    }
+
+    fn reset(&mut self, o: &Self) {
+        *self = *o
+    }
+}
+
+impl SimpleMovingAverage for f64 {
+    fn update_with_moving_average(&mut self, o: &Self, x: u32, y: u32) {
+        *self += (x as f64) * (*o - *self) / (y as f64)
     }
 
     fn reset(&mut self, o: &Self) {
@@ -88,7 +100,7 @@ impl SimpleMovingAverage for Vec<f32> {
     }
 }
 
-pub(crate) struct DefaultSimulator;
+pub struct DefaultSimulator;
 impl<D> Simulator<D> for DefaultSimulator
 where
     D: DecisionProcess,
@@ -101,8 +113,9 @@ where
 
 use rand::prelude::IteratorRandom;
 use rand::prelude::SliceRandom;
+use std::ops::{Add, Sub};
 
-pub(crate) struct RandomSimulator;
+pub struct RandomSimulator;
 impl<D: DecisionProcess> Simulator<D> for RandomSimulator {
     fn sample_outcome(&self, d: &D, s: &mut D::State) -> D::Outcome {
         let check = d.is_finished(s);
@@ -126,7 +139,7 @@ impl<D: DecisionProcess> Simulator<D> for RandomSimulator {
     }
 }
 
-pub(crate) struct OneStepGreedySimulator;
+pub struct OneStepGreedySimulator;
 impl<D: DecisionProcess> Simulator<D> for OneStepGreedySimulator
 where
     D::Outcome: WinnableOutcome<D::Agent>,
@@ -177,25 +190,78 @@ where
 impl Distance for f32 {
     type NormType = f32;
 
-    fn distance(&self, other: &Self) -> Self::NormType {
-        (*self - other).abs()
+    fn norm(&self) -> Self::NormType {
+        self.abs()
     }
 
-    fn translate(&self, direction: &Self, x: Self::NormType, y: Self::NormType) -> Self {
-        *self + *direction * y / x
+    fn sub(&self, other: &Self) -> Self {
+        *self - *other
+    }
+
+    fn clip(&mut self, n: Self::NormType) {
+        if *self > n {
+            *self = n
+        } else if *self < -n {
+            *self = -n
+        }
+    }
+
+    fn scale(&self, w: Self::NormType) -> Self {
+        w * *self
     }
 }
-/*
+
 impl Distance for f64 {
     type NormType = f64;
 
-    fn distance(&self, other: &Self) -> Self::NormType {
-        (*self - other).abs()
+    fn norm(&self) -> Self::NormType {
+        self.abs()
     }
-}*/
+
+    fn sub(&self, other: &Self) -> Self {
+        *self - *other
+    }
+
+    fn clip(&mut self, n: Self::NormType) {
+        if *self > n {
+            *self = n
+        } else if *self < -n {
+            *self = -n
+        }
+    }
+
+    fn scale(&self, w: Self::NormType) -> Self {
+        w * *self
+    }
+}
+
+impl Distance for Vec<f32> {
+    type NormType = f32;
+
+    fn norm(&self) -> Self::NormType {
+        let mut s = 0.0;
+        for x in self.iter() {
+            s += x * x;
+        }
+        s.sqrt()
+    }
+
+    fn clip(&mut self, n: Self::NormType) {
+        self.iter_mut().for_each(|x| x.clip(n))
+    }
+
+    fn sub(&self, other: &Self) -> Self {
+        self.iter().zip(other.iter()).map(|(a, b)| a - b).collect()
+    }
+
+    fn scale(&self, w: Self::NormType) -> Self {
+        self.iter().map(|x| x * w).collect()
+    }
+}
 
 pub(crate) mod c4;
 pub(crate) mod graph_dp;
+pub mod hex;
 
 #[cfg(test)]
 mod tests {

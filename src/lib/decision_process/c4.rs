@@ -37,7 +37,7 @@ impl DecisionProcess for C4 {
     type State = Board;
 
     // winning percentage for white, normalised between [-1, 1]
-    type Outcome = f32;
+    type Outcome = f64;
 
     fn start_state(&self) -> Self::State {
         Board {
@@ -209,6 +209,17 @@ impl Outcome<Player> for f32 {
     }
 }
 
+impl Outcome<Player> for f64 {
+    type RewardType = f32;
+
+    fn reward_for_agent(&self, a: Player) -> Self::RewardType {
+        match a {
+            B => -*self as f32,
+            _ => *self as f32,
+        }
+    }
+}
+
 impl WinnableOutcome<Player> for f32 {
     fn is_winning_for(&self, a: Player) -> bool {
         match a {
@@ -222,7 +233,26 @@ impl WinnableOutcome<Player> for f32 {
     }
 }
 
+impl WinnableOutcome<Player> for f64 {
+    fn is_winning_for(&self, a: Player) -> bool {
+        match a {
+            B => *self < -0.95,
+            _ => *self > 0.95,
+        }
+    }
+
+    fn is_losing_for(&self, a: i8) -> bool {
+        self.is_winning_for(opponent(a))
+    }
+}
+
 impl ComparableOutcome<Player> for f32 {
+    fn is_better_than(&self, other: &Self, a: i8) -> bool {
+        self.reward_for_agent(a) > other.reward_for_agent(a)
+    }
+}
+
+impl ComparableOutcome<Player> for f64 {
     fn is_better_than(&self, other: &Self, a: i8) -> bool {
         self.reward_for_agent(a) > other.reward_for_agent(a)
     }
@@ -257,7 +287,7 @@ impl Hsh<Board> for ZobHash {
         ans
     }
 }
-/*
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -275,6 +305,7 @@ mod tests {
         ActionWithStaticPolicy, NoFilteringAndUniformPolicyForPuct, NoProcessing, OnlyAction,
     };
 
+    /*
     #[test]
     fn basic() {
         assert_eq!(opponent(B), W);
@@ -285,7 +316,7 @@ mod tests {
         assert_eq!(1.0.reward_for_agent(B), -1.0);
         assert_eq!(-1.0.reward_for_agent(W), -1.0);
         assert_eq!(-1.0.reward_for_agent(B), 1.0);
-    }
+    }*/
 
     #[test]
     fn test_moves() {
@@ -373,4 +404,3 @@ mod tests {
         node_distribution(s.store(), &node);
     }
 }
-*/

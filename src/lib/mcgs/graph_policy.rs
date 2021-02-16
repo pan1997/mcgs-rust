@@ -129,16 +129,18 @@ where
 
         for edge_index in 0..edge_count {
             let edge = store.get_edge(node, edge_index);
+
+            let edge_selection_count = edge.selection_count();
+            if edge_selection_count == 0 {
+                return edge_index;
+            }
+
             let q = edge
                 .expected_outcome()
                 .reward_for_agent(agent)
                 .to_f32()
                 .unwrap();
 
-            let edge_selection_count = edge.selection_count();
-            if edge_selection_count == 0 {
-                return edge_index;
-            }
             // No need to iterate over other edges if we have one winning edge
             // TODO: generalise this
             if q >= 1.0 {
@@ -189,16 +191,23 @@ where
 
         for edge_index in 0..edge_count {
             let edge = store.get_edge(node, edge_index);
-            let q = edge
-                .expected_outcome()
-                .reward_for_agent(agent)
-                .to_f32()
-                .unwrap();
 
             let edge_selection_count = edge.selection_count();
             if edge_selection_count == 0 {
                 return edge_index;
             }
+
+            let edge_sample_count = edge.sample_count();
+
+            let q = if edge_sample_count > 0 {
+                edge.expected_outcome()
+                    .reward_for_agent(agent)
+                    .to_f32()
+                    .unwrap()
+            } else {
+                1.0
+            };
+
             // TODO: generalise this
             if q >= 1.0 {
                 return edge_index;
@@ -252,7 +261,7 @@ pub struct WeightedRandomPolicyWithExpDepth<P1, P2> {
 }
 
 impl<P1, P2> WeightedRandomPolicyWithExpDepth<P1, P2> {
-    pub(crate) fn new(p1: P1, p2: P2, e: f32, f: f32) -> Self {
+    pub fn new(p1: P1, p2: P2, e: f32, f: f32) -> Self {
         WeightedRandomPolicyWithExpDepth {
             p: p2,
             p_epsilon: p1,

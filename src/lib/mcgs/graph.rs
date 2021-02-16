@@ -62,23 +62,48 @@ impl<I, O: Clone + SimpleMovingAverage> OutcomeStore<O> for Node<O, I> {
 }
 
 impl<I, O: Clone + SimpleMovingAverage> OutcomeStore<O> for Edge<O, I> {
+    // Not locking the child for now, as we can live with (slightly) stale values
     fn expected_outcome(&self) -> O {
+        /*let n = unsafe { &*self.node.get() };
+        // TODO: why is this needed
+        if n.is_some() {
+            n.as_ref().unwrap().expected_outcome()
+        } else {
+            unsafe { &*self.internal.get() }.expected_sample.clone()
+        }*/
         unsafe { &*self.internal.get() }.expected_sample.clone()
     }
 
     fn is_solved(&self) -> bool {
+        /*let n = unsafe { &*self.node.get() };
+        // TODO: why is this needed
+        if n.is_some() {
+            n.as_ref().unwrap().is_solved()
+        } else {
+            false
+        }*/
+        //unsafe { &*self.node.get()}.as_ref().unwrap().is_solved()
         unsafe { &*self.internal.get() }.is_solved()
     }
 
     fn add_sample(&self, outcome: &O, weight: u32) {
+        //unsafe { &*self.node.get()}.as_ref().unwrap().expected_outcome()
         unsafe { &mut *self.internal.get() }.add_sample(outcome, weight)
     }
 
     fn sample_count(&self) -> u32 {
+        /*let n = unsafe { &*self.node.get() };
+        // TODO: why is this needed
+        if n.is_some() {
+            n.as_ref().unwrap().sample_count()
+        } else {
+            0
+        }*/
         unsafe { &*self.internal.get() }.sample_count
     }
 
     fn mark_solved(&self, outcome: &O) {
+        //unsafe { &*self.node.get()}.as_ref().unwrap().expected_outcome()
         unsafe { &mut *self.internal.get() }.fix(outcome)
     }
 }
@@ -125,7 +150,7 @@ pub struct SafeGraph<H: Eq + Hash, D, O> {
 }
 
 impl<H: Eq + Hash, D, O> SafeGraph<H, D, O> {
-    pub(crate) fn new(outcome: O) -> Self {
+    pub fn new(outcome: O) -> Self {
         // TODO: set capacity
         SafeGraph {
             default_outcome: outcome,

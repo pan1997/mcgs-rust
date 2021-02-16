@@ -36,7 +36,7 @@ pub struct BasicExpansion<S> {
 }
 
 impl<S> BasicExpansion<S> {
-    pub(crate) fn new(s: S) -> Self {
+    pub fn new(s: S) -> Self {
         BasicExpansion { simulator: s }
     }
 }

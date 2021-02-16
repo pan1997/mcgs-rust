@@ -1,10 +1,10 @@
 mod common;
-pub(crate) mod expansion_traits;
-pub(crate) mod graph;
-pub(crate) mod graph_policy;
+pub mod expansion_traits;
+pub mod graph;
+pub mod graph_policy;
 mod samples;
-pub(crate) mod search_graph;
-pub(crate) mod tree;
+pub mod search_graph;
+pub mod tree;
 
 use graph_policy::*;
 use search_graph::*;
@@ -16,6 +16,7 @@ use crate::lib::mcgs::expansion_traits::{BlockExpansionTrait, ExpansionTrait};
 use crate::lib::mcgs::graph::Hsh;
 use crate::lib::mcgs::SelectionResult::Expand;
 use colored::{ColoredString, Colorize};
+use num::FromPrimitive;
 use std::fmt::Display;
 use std::marker::PhantomData;
 use std::ops::Deref;
@@ -30,19 +31,67 @@ pub struct ExpansionResult<O, EI, K> {
     edges: EI,
 }
 
+pub trait TrajectoryPruner<E, N, V> {
+    fn check_for_pruning<'a>(&self, edge: &E, n: &'a N) -> SelectionResult<&'a N, V>;
+}
+
+pub struct AlwaysExpand;
+impl<E, N, V> TrajectoryPruner<E, N, V> for AlwaysExpand {
+    fn check_for_pruning<'a>(&self, _: &E, _: &'a N) -> SelectionResult<&'a N, V> {
+        SelectionResult::Expand
+    }
+}
+
+pub struct GraphBasedPrune<R> {
+    pub(crate) delta: R,
+    pub(crate) clip: R,
+    //maximum_weight: u32
+}
+impl<E, N, V, R> TrajectoryPruner<E, N, V> for GraphBasedPrune<R>
+where
+    N: OutcomeStore<V> + SelectCountStore,
+    E: OutcomeStore<V> + SelectCountStore,
+    V: Distance<NormType = R>,
+    R: PartialOrd + FromPrimitive + Copy,
+{
+    fn check_for_pruning<'a>(&self, edge: &E, n: &'a N) -> SelectionResult<&'a N, V> {
+        let e_count = edge.selection_count();
+        let n_count = n.selection_count();
+        if n_count > e_count {
+            let e_outcome = edge.expected_outcome();
+            let n_outcome = n.expected_outcome();
+            let d = n_outcome.sub(&e_outcome).norm();
+
+            if self.delta < d {
+                let e_sample_count = edge.sample_count();
+                let mut o = n_outcome
+                    .scale(FromPrimitive::from_u32(e_sample_count + 1).unwrap())
+                    .sub(&e_outcome.scale(FromPrimitive::from_u32(e_sample_count).unwrap()));
+                //let mut o = n_outcome.sub(&e_outcome).scale(FromPrimitive::from_f32(1000.0).unwrap());
+                // if n is greater, it is 1 else 0
+                o.clip(self.delta);
+                SelectionResult::Propagate(n, o, 1)
+            } else {
+                SelectionResult::Expand
+            }
+        } else {
+            SelectionResult::Expand
+        }
+    }
+}
+
 pub trait ExtraPropagationTask<G, N, O, A> {
     fn process(&self, graph: &G, node: &N, outcome: &O, agent: A);
 }
-
 impl<G, N, O, A> ExtraPropagationTask<G, N, O, A> for () {
     fn process(&self, _: &G, _: &N, _: &O, _: A) {}
 }
 
-pub(crate) struct MiniMaxPropagationTask<P> {
+pub struct MiniMaxPropagationTask<P> {
     phantom: PhantomData<P>,
 }
 impl<P> MiniMaxPropagationTask<P> {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         MiniMaxPropagationTask {
             phantom: Default::default(),
         }
@@ -98,29 +147,18 @@ pub struct Search<P, S, R, G, X, D, H, Z> {
     selection_policy: S,
     expand_operation: X,
     state_hasher: H,
-    q_shorting_bound: R,
+    trajectory_pruner: R,
     propagation_task: Z,
-    maximum_trajectory_weight: u32,
     worker_count: u32,
     phantom: PhantomData<D>,
 }
 
-enum SelectionResult<N, V> {
+pub enum SelectionResult<N, V> {
     Expand,
     Propagate(N, V, u32), // The third arg is the weight
 }
 
-impl<P, S, G, X, D, H, Z>
-    Search<
-        P,
-        S,
-        <<P::Outcome as Outcome<P::Agent>>::RewardType as Distance>::NormType,
-        G,
-        X,
-        D,
-        H,
-        Z,
-    >
+impl<P, S, R, G, X, D, H, Z> Search<P, S, R, G, X, D, H, Z>
 where
     P: DecisionProcess,
     G: SearchGraph<D, H::K>,
@@ -129,18 +167,18 @@ where
     G::Edge: SelectCountStore + OutcomeStore<P::Outcome> + Deref<Target = P::Action>,
     <P::Outcome as Outcome<P::Agent>>::RewardType: Distance,
     P::Outcome: SimpleMovingAverage,
+    R: TrajectoryPruner<G::Edge, G::Node, P::Outcome>,
     H: Hsh<P::State>,
     Z: ExtraPropagationTask<G, G::Node, P::Outcome, P::Agent>,
 {
-    pub(crate) fn new(
+    pub fn new(
         problem: P,
         search_graph: G,
         selection_policy: S,
         expand_operation: X,
         state_hasher: H,
         propagation_task: Z,
-        q_shorting_bound: <<P::Outcome as Outcome<P::Agent>>::RewardType as Distance>::NormType,
-        maximum_trajectory_weight: u32,
+        trajectory_pruner: R,
         worker_count: u32,
     ) -> Self {
         Search {
@@ -149,19 +187,18 @@ where
             selection_policy,
             expand_operation,
             state_hasher,
-            q_shorting_bound,
+            trajectory_pruner,
             propagation_task,
-            maximum_trajectory_weight,
             worker_count,
             phantom: PhantomData,
         }
     }
 
-    pub(crate) fn set_worker_count(&mut self, w: u32) {
+    pub fn set_worker_count(&mut self, w: u32) {
         self.worker_count = w;
     }
 
-    pub(crate) fn problem(&self) -> &P {
+    pub fn problem(&self) -> &P {
         &self.problem
     }
 
@@ -180,7 +217,7 @@ where
         self.search_graph.create_node(k, x.edges)
     }
 
-    pub(crate) fn search_graph(&self) -> &G {
+    pub fn search_graph(&self) -> &G {
         &self.search_graph
     }
 
@@ -215,7 +252,7 @@ where
             node.increment_selection_count();
             edge.increment_selection_count();
 
-            let edge_selection_count = edge.selection_count();
+            //let edge_selection_count = edge.selection_count();
 
             trajectory.push((node, edge, agent));
             undo_stack.push(self.problem.transition(state, &edge));
@@ -228,40 +265,21 @@ where
             let next_node = self.search_graph.get_target_node(edge);
             next_node.lock();
 
+            match self.trajectory_pruner.check_for_pruning(edge, next_node) {
+                SelectionResult::Propagate(a, b, c) => {
+                    next_node.unlock();
+                    node.unlock();
+                    return SelectionResult::Propagate(a, b, c);
+                }
+                _ => (),
+            };
+
             // This unlock is done after locking the next node to prevent erroneous transposition
             // detection in the rare case that another thread jumps over this node. This also is
             // safe and doesn't cause a deadlock with back propagation, as propagation unlocks the
             // node before locking another.
             node.unlock();
 
-            // Ignoring shorting for now, as it introduces weird behaviour
-            // Check if this is a transposition (next_node has extra selections)
-            /*
-            if next_node.selection_count() > edge_selection_count {
-                // Next node always has some samples, as we have moved away from dangling nodes
-                // to dangling edges.
-                //let diff = next_node.expected_outcome()
-                let delta = next_node
-                    .expected_outcome()
-                    .reward_for_agent(agent)
-                    .distance(&edge.expected_outcome().reward_for_agent(agent));
-                if delta > self.q_shorting_bound {
-                    let node_selection_count = next_node.selection_count();
-                    let expected_outcome = next_node.expected_outcome();
-                    next_node.unlock();
-                    return SelectionResult::Propagate(
-                        next_node,
-                        expected_outcome,
-                        //  This needs to be fixed
-                        node_selection_count - edge_selection_count
-                        //min(
-                          //  self.maximum_trajectory_weight,
-                          //  node_selection_count - edge_selection_count,
-                        //),
-                    );
-                }
-            }
-            */
             // We need an additional terminal check, as we can mark non leaf nodes as terminal
             if next_node.is_solved() {
                 next_node.unlock();
@@ -315,11 +333,12 @@ where
         //} else {
         //    None
         //};
-        let mut last_node_terminal = node.is_solved();
+        let mut last_node = node;
         let mut depth = 0;
         while let Some((node, edge, agent)) = trajectory.pop() {
             node.lock();
 
+            /*
             // scale it with depth, so that deeper lines are weighed more
             let w = if depth > 8 {
                 weight * 8
@@ -329,10 +348,10 @@ where
                 weight * 2
             } else {
                 weight
-            };
-            //let w = weight;
-            if last_node_terminal {
-                edge.mark_solved(&outcome);
+            };*/
+            let w = weight;
+            if last_node.is_solved() {
+                edge.mark_solved(&last_node.expected_outcome());
             } else {
                 edge.add_sample(&outcome, w);
             }
@@ -341,10 +360,11 @@ where
             self.propagation_task
                 .process(&self.search_graph, node, &outcome, agent);
 
-            if last_node_terminal && !node.is_solved() {
-                last_node_terminal = false
-            }
+            //if last_node_terminal && !node.is_solved() {
+            //    last_node_terminal = false
+            //}
             node.unlock();
+            last_node = node;
             depth += 1;
         }
     }
@@ -510,7 +530,7 @@ where
         start_time.elapsed().as_millis()
     }
 
-    pub(crate) fn start_parallel(
+    pub fn start_parallel(
         &self,
         root: &G::Node,
         state: &P::State,
@@ -535,6 +555,7 @@ where
         D: Sync,
         H: Sync,
         Z: Sync,
+        R: Sync,
     {
         let start_time = Instant::now();
         let start_count = root.selection_count();
@@ -687,7 +708,7 @@ mod tests {
     use crate::lib::decision_process::c4::C4;
     use crate::lib::decision_process::graph_dp::tests::{problem1, problem2, problem3, DSim};
     use crate::lib::decision_process::graph_dp::GHash;
-    use crate::lib::decision_process::DefaultSimulator;
+    use crate::lib::decision_process::{DefaultSimulator, RandomSimulator};
     use crate::lib::mcgs::expansion_traits::{
         BasicExpansion, BasicExpansionWithUniformPrior, BlockExpansionFromBasic,
     };
@@ -696,6 +717,7 @@ mod tests {
     use crate::lib::mcgs::tree::tests::print_tree;
     use crate::lib::mcgs::tree::SafeTree;
     use crate::lib::{ActionWithStaticPolicy, OnlyAction};
+    use crate::lib::decision_process::hex::Hex;
 
     #[test]
     fn random() {
@@ -706,8 +728,7 @@ mod tests {
             BasicExpansion::new(DSim),
             NoHash,
             (),
-            0.01,
-            1,
+            AlwaysExpand,
             1,
         );
 
@@ -729,8 +750,7 @@ mod tests {
             BasicExpansion::new(DSim),
             NoHash,
             (),
-            0.01,
-            1,
+            AlwaysExpand,
             1,
         );
 
@@ -752,8 +772,7 @@ mod tests {
             BlockExpansionFromBasic::new(BasicExpansion::new(DSim)),
             NoHash,
             (),
-            0.01,
-            1,
+            AlwaysExpand,
             1,
         );
 
@@ -775,8 +794,7 @@ mod tests {
             BasicExpansionWithUniformPrior::new(DSim),
             NoHash,
             (),
-            0.01,
-            1,
+            AlwaysExpand,
             1,
         );
 
@@ -798,8 +816,7 @@ mod tests {
             BasicExpansionWithUniformPrior::new(DSim),
             NoHash,
             (),
-            0.01,
-            1,
+            AlwaysExpand,
             1,
         );
 
@@ -821,8 +838,7 @@ mod tests {
             BasicExpansion::new(DefaultSimulator),
             NoHash,
             (),
-            0.01,
-            1,
+            AlwaysExpand,
             1,
         );
         let state = &mut s.problem.start_state();
@@ -843,8 +859,7 @@ mod tests {
             BasicExpansion::new(DSim),
             NoHash,
             (),
-            0.01,
-            1,
+            AlwaysExpand,
             1,
         );
 
@@ -868,8 +883,11 @@ mod tests {
             BasicExpansion::new(DSim),
             GHash,
             (),
-            0.01,
-            1,
+            //AlwaysExpand,
+            GraphBasedPrune {
+                delta: 0.01,
+                clip: 1.0,
+            },
             1,
         );
 
@@ -882,7 +900,6 @@ mod tests {
         print_graph(&s.search_graph, &n, 0, true);
         println!()
     }
-
     #[test]
     fn mmax_test() {
         let s = Search::new(
@@ -892,8 +909,7 @@ mod tests {
             BasicExpansion::new(DSim),
             NoHash,
             MiniMaxPropagationTask::new(),
-            0.01,
-            1,
+            AlwaysExpand,
             1,
         );
 
@@ -906,5 +922,28 @@ mod tests {
         print_tree(&s.search_graph, &n, 0, true);
         s.one_iteration(&n, state);
         println!()
+    }
+
+    #[test]
+    fn uct_hex() {
+        let s = Search::new(
+            Hex::new(5, 5),
+            SafeTree::new(0.0),
+            UctPolicy::new(2.4),
+            BasicExpansion::new(RandomSimulator),
+            NoHash,
+            (),
+            AlwaysExpand,
+            1,
+        );
+
+        let state = &mut s.problem.start_state();
+        println!("{}", state);
+        let n = s.get_new_node(state);
+        for _ in 0..2500 {
+            s.one_iteration(&n, state);
+        }
+        println!("{}", state);
+        s.print_pv(&n, state, None, None, &mut vec![], 1);
     }
 }

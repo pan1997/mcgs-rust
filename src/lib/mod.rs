@@ -2,11 +2,11 @@ use crate::lib::decision_process::DecisionProcess;
 use std::fmt::{Display, Formatter};
 use std::ops::Deref;
 
-pub(crate) mod decision_process;
-pub(crate) mod mcgs;
+pub mod decision_process;
+pub mod mcgs;
 pub(crate) mod mcts;
 
-pub(crate) struct OnlyAction<A> {
+pub struct OnlyAction<A> {
     pub(crate) action: A,
 }
 
@@ -34,7 +34,7 @@ impl<A: Clone> Clone for OnlyAction<A> {
     }
 }
 
-pub(crate) struct ActionWithStaticPolicy<A> {
+pub struct ActionWithStaticPolicy<A> {
     pub(crate) action: A,
     pub(crate) static_policy_score: f32,
 }

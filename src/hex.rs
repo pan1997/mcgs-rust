@@ -1,5 +1,6 @@
 mod lib;
-use crate::lib::decision_process::c4::{Move, ZobHash, C4};
+
+use crate::lib::decision_process::hex::{Hex, Move};
 use crate::lib::decision_process::{DecisionProcess, DefaultSimulator};
 use crate::lib::decision_process::{OneStepGreedySimulator, RandomSimulator};
 use crate::lib::mcgs::expansion_traits::{
@@ -21,47 +22,20 @@ use std::sync::atomic::Ordering;
 use text_io::read;
 
 fn main() {
-    /*
+    let default_cpu = 12;
     let mut s = Search::new(
-        C4::new(9, 7),
-        SafeTree::<OnlyAction<_>, f32>::new(0.0),
-        WeightedRandomPolicyWithExpDepth::new(RandomPolicy, UctPolicy::new(2.4), 0.01, -0.8),
-        BasicExpansion::new(OneStepGreedySimulator),
-        NoHash,
-        0.01,
-        1,
-        default_cpu,
-    );
-    let s = Search::new(
-        C4::new(9, 7),
-        SafeTree::<ActionWithStaticPolicy<_>, f32>::new(),
-        PuctPolicy::new(2.4, 20.0),
-        BasicExpansionWithUniformPrior::new(RandomSimulator),
-        0.01,
-        1,
-    );*/
-    let default_cpu = 8;
-    let mut s = Search::new(
-        C4::new(9, 7),
-        SafeGraph::new(0.0),
-        //WeightedRandomPolicyWithExpDepth::new(RandomPolicy, UctPolicy::new(2.4), 0.05, -1.5),
+        Hex::new(11, 11),
+        SafeTree::<OnlyAction<_>, _>::new(0.0),
         WeightedRandomPolicyWithExpDepth::new(
             RandomPolicy,
-            //PuctPolicy::new(2500.0, 2.4),
             UctPolicy::new(2.4),
             0.05,
             -1.5,
         ),
-        BlockExpansionFromBasic::new(BasicExpansion::new(OneStepGreedySimulator)),
-        //BlockExpansionFromBasic::new(BasicExpansionWithUniformPrior::new(OneStepGreedySimulator)),
-        ZobHash::new(63),
-        //NoHash,
+        BlockExpansionFromBasic::new(BasicExpansion::new(RandomSimulator)),
+        NoHash,
         MiniMaxPropagationTask::new(),
-        //AlwaysExpand,
-        GraphBasedPrune {
-            delta: 0.05,
-            clip: 1.0,
-        },
+        AlwaysExpand,
         default_cpu,
     );
 
@@ -74,8 +48,8 @@ fn main() {
             "clear" => state = s.problem().start_state(),
             "exit" | "quit" => std::process::exit(0),
             "drop" => {
-                let col: u8 = read!();
-                let m = Move(col);
+                let (row, col) = (read!(), read!());
+                let m = Move(row, col);
                 s.problem().transition(&mut state, &m);
             }
             "cpu" => {
@@ -104,18 +78,6 @@ fn main() {
                     node.selection_count(),
                     elapsed
                 );
-                //println!("p1: {:?} p2: {:?}", s.tree_policy().c1, s.tree_policy().c2);
-                /*for (index, (a, b)) in s
-                    .tree_policy()
-                    .c1
-                    .iter()
-                    .zip(s.tree_policy().c2.iter())
-                    .enumerate()
-                //{
-                //   let ac = a.load(Ordering::SeqCst);
-                //    let bc = b.load(Ordering::SeqCst);
-                //    //println!("{} {}", index, ac as f32 / (ac + bc) as f32);
-                //}*/
                 s.search_graph().clear(node);
             }
             _ => (),

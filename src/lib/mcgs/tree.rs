@@ -123,7 +123,7 @@ pub struct SafeTree<D, O> {
 }
 
 impl<D, O> SafeTree<D, O> {
-    pub(crate) fn new(outcome: O) -> Self {
+    pub fn new(outcome: O) -> Self {
         SafeTree {
             default_outcome: outcome,
             phantom: PhantomData,
