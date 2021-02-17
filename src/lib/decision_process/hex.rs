@@ -37,19 +37,16 @@ impl Hex {
     }
 
     fn count(pieces: &Vec<u32>) -> usize {
-        //println!("Counting");
         let mut reachable = vec![0; pieces.len()];
         reachable[0] = pieces[0];
         let mut cursor = 0;
         loop {
             let mut row = reachable[cursor];
-            //println!("Cursor: {}, row: {:011b}", cursor, row);
             if row == 0 {
                 return cursor;
             }
 
             let row_prev = row;
-            // expand row horizontally
             loop {
                 let nr = ((row << 1) | (row >> 1) | row) & pieces[cursor];
                 if nr == row {
@@ -61,7 +58,6 @@ impl Hex {
             reachable[cursor] = row;
             let mut flag = true;
             if row != row_prev {
-                //println!("Cursor: {}, row: {:011b}", cursor, row);
                 while cursor > 0 {
                     cursor -= 1;
                     let new = (reachable[cursor] | (row << 1) | row) & pieces[cursor];
@@ -96,8 +92,10 @@ impl Hex {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Move(pub u16, pub u16);
+
+const PIE: Move = Move(u16::MAX, u16::MAX);
 
 impl DecisionProcess for Hex {
     type Agent = Player;
@@ -123,6 +121,12 @@ impl DecisionProcess for Hex {
                 }
             }
         }
+
+        if a.len() == (self.width as usize * self.height as usize - 1) && s.player_to_move == B {
+            a.push(PIE);
+            // pie rule after the first move
+        }
+
         if a.len() == 0 {
             println!("{}", s);
             println!("{:?} {:?}", s.white_rows, s.black_columns);
@@ -136,10 +140,16 @@ impl DecisionProcess for Hex {
     }
 
     fn transition(&self, s: &mut Self::State, a: &Self::Action) -> Self::UndoAction {
-        match s.player_to_move {
-            B => Hex::flip(&mut s.black_columns[a.1 as usize], a.0 as u32),
-            W => Hex::flip(&mut s.white_rows[a.0 as usize], a.1 as u32),
-            _ => panic!("illegal player"),
+        if *a == PIE {
+            let temp = s.white_rows.clone();
+            s.white_rows = s.black_columns.clone();
+            s.black_columns = temp;
+        } else {
+            match s.player_to_move {
+                B => Hex::flip(&mut s.black_columns[a.1 as usize], a.0 as u32),
+                W => Hex::flip(&mut s.white_rows[a.0 as usize], a.1 as u32),
+                _ => panic!("illegal player"),
+            }
         }
         s.player_to_move = opponent(s.player_to_move);
         *a
@@ -147,10 +157,16 @@ impl DecisionProcess for Hex {
 
     fn undo_transition(&self, s: &mut Self::State, u: Self::UndoAction) {
         s.player_to_move = opponent(s.player_to_move);
-        match s.player_to_move {
-            B => Hex::flip(&mut s.black_columns[u.1 as usize], u.0 as u32),
-            W => Hex::flip(&mut s.white_rows[u.0 as usize], u.1 as u32),
-            _ => panic!("illegal player"),
+        if u == PIE {
+            let temp = s.white_rows.clone();
+            s.white_rows = s.black_columns.clone();
+            s.black_columns = temp;
+        } else {
+            match s.player_to_move {
+                B => Hex::flip(&mut s.black_columns[u.1 as usize], u.0 as u32),
+                W => Hex::flip(&mut s.white_rows[u.0 as usize], u.1 as u32),
+                _ => panic!("illegal player"),
+            }
         }
     }
 
