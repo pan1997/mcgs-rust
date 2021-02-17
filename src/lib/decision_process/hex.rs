@@ -1,5 +1,8 @@
-use crate::lib::decision_process::DecisionProcess;
+use crate::lib::decision_process::{DecisionProcess, Simulator};
 use std::fmt::{Display, Formatter};
+use rand::{thread_rng, Rng};
+use rand::prelude::SliceRandom;
+use crate::lib::mcgs::graph::Hsh;
 
 type Player = i8;
 
@@ -206,6 +209,75 @@ impl Display for Move {
         write!(f, "({},{})", self.0, self.1)
     }
 }
+
+pub struct HexRandomSimulator;
+impl Simulator<Hex> for HexRandomSimulator {
+    fn sample_outcome(&self, d: &Hex, state: &mut <Hex as DecisionProcess>::State) -> <Hex as DecisionProcess>::Outcome {
+        let mut actions: Vec<Move> = d.legal_actions(state).collect();
+        actions.shuffle(&mut thread_rng());
+        let mut u = vec![];
+        for m in actions {
+            let o = d.is_finished(state);
+            if o.is_some() {
+                while let Some(undo) = u.pop() {
+                    d.undo_transition(state, undo);
+                }
+                return o.unwrap()
+            }
+            u.push(d.transition(state, &m));
+        }
+        let outcome = d.is_finished(state).unwrap();
+        while let Some(undo) = u.pop() {
+            d.undo_transition(state, undo);
+        }
+        outcome
+            /*
+        println!("{}", state);
+        println!("{:?} {:?}", state.white_rows, state.black_columns);
+        //println!("{} {}", Hex::count())
+        panic!("should not reach here")*/
+    }
+}
+
+pub struct ZobHash {
+    w_keys: Vec<Vec<u64>>,
+    b_keys: Vec<Vec<u64>>
+}
+
+impl ZobHash {
+    pub fn new(w: usize, h: usize) -> Self {
+        ZobHash {
+            w_keys: (0..h).map(|_| ZobHash::random_vec(w)).collect(),
+            b_keys: (0..w).map(|_| ZobHash::random_vec(h)).collect()
+        }
+    }
+
+    fn random_vec(len: usize) -> Vec<u64> {
+        (0..len).map(|_| thread_rng().gen()).collect()
+    }
+}
+
+impl Hsh<Board> for ZobHash {
+    type K = u64;
+
+    fn key(&self, s: &Board) -> Self::K {
+        let row_count = s.white_rows.len();
+        let col_count = s.black_columns.len();
+        let mut result = 0;
+        for row in 0..row_count {
+            for col in 0..col_count {
+                if Hex::get(s.white_rows[row], col as u32) == 1 {
+                    result ^= self.w_keys[row][col];
+                } else if Hex::get(s.black_columns[col], row as u32) == 1 {
+                    result ^= self.b_keys[col][row]
+                }
+            }
+        }
+        result
+    }
+}
+
+
 
 #[cfg(test)]
 mod tests {

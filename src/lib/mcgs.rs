@@ -43,9 +43,9 @@ impl<E, N, V> TrajectoryPruner<E, N, V> for AlwaysExpand {
 }
 
 pub struct GraphBasedPrune<R> {
-    pub(crate) delta: R,
-    pub(crate) clip: R,
-    pub(crate) margin: u32
+    pub delta: R,
+    pub clip: R,
+    pub margin: u32
     //maximum_weight: u32
 }
 impl<E, N, V, R> TrajectoryPruner<E, N, V> for GraphBasedPrune<R>
@@ -719,7 +719,7 @@ mod tests {
     use crate::lib::mcgs::tree::tests::print_tree;
     use crate::lib::mcgs::tree::SafeTree;
     use crate::lib::{ActionWithStaticPolicy, OnlyAction};
-    use crate::lib::decision_process::hex::Hex;
+    use crate::lib::decision_process::hex::{Hex, HexRandomSimulator};
 
     #[test]
     fn random() {
@@ -933,7 +933,7 @@ mod tests {
             Hex::new(5, 5),
             SafeTree::new(0.0),
             UctPolicy::new(2.4),
-            BasicExpansion::new(RandomSimulator),
+            BasicExpansion::new(HexRandomSimulator),
             NoHash,
             (),
             AlwaysExpand,
