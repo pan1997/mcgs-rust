@@ -44,6 +44,7 @@ fn main() {
     let mut s = Search::new(
         C4::new(9, 7),
         SafeGraph::new(0.0),
+        //SafeTree::new(0.0),
         //WeightedRandomPolicyWithExpDepth::new(RandomPolicy, UctPolicy::new(2.4), 0.05, -1.5),
         WeightedRandomPolicyWithExpDepth::new(
             RandomPolicy,
@@ -61,6 +62,7 @@ fn main() {
         GraphBasedPrune {
             delta: 0.05,
             clip: 1.0,
+            margin: 10
         },
         default_cpu,
     );

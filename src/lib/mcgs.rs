@@ -45,6 +45,7 @@ impl<E, N, V> TrajectoryPruner<E, N, V> for AlwaysExpand {
 pub struct GraphBasedPrune<R> {
     pub(crate) delta: R,
     pub(crate) clip: R,
+    pub(crate) margin: u32
     //maximum_weight: u32
 }
 impl<E, N, V, R> TrajectoryPruner<E, N, V> for GraphBasedPrune<R>
@@ -57,19 +58,20 @@ where
     fn check_for_pruning<'a>(&self, edge: &E, n: &'a N) -> SelectionResult<&'a N, V> {
         let e_count = edge.selection_count();
         let n_count = n.selection_count();
-        if n_count > e_count {
+        if n_count > e_count + self.margin {
             let e_outcome = edge.expected_outcome();
             let n_outcome = n.expected_outcome();
             let d = n_outcome.sub(&e_outcome).norm();
 
             if self.delta < d {
-                let e_sample_count = edge.sample_count();
-                let mut o = n_outcome
-                    .scale(FromPrimitive::from_u32(e_sample_count + 1).unwrap())
-                    .sub(&e_outcome.scale(FromPrimitive::from_u32(e_sample_count).unwrap()));
-                //let mut o = n_outcome.sub(&e_outcome).scale(FromPrimitive::from_f32(1000.0).unwrap());
+                //let e_sample_count = edge.sample_count();
+                //let mut o = n_outcome
+                //    .scale(FromPrimitive::from_u32(e_sample_count + 1).unwrap())
+                 //   .sub(&e_outcome.scale(FromPrimitive::from_u32(e_sample_count).unwrap()));
+                let mut o = n_outcome.sub(&e_outcome).scale(FromPrimitive::from_f32(1000.0)
+                    .unwrap());
                 // if n is greater, it is 1 else 0
-                o.clip(self.delta);
+                o.clip(self.clip);
                 SelectionResult::Propagate(n, o, 1)
             } else {
                 SelectionResult::Expand
@@ -887,6 +889,7 @@ mod tests {
             GraphBasedPrune {
                 delta: 0.01,
                 clip: 1.0,
+                margin: 2
             },
             1,
         );
