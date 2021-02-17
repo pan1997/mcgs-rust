@@ -16,6 +16,7 @@ text_io = "*"
 crossbeam = "*"
 dashmap = "*"
 colored = "*"
+tch = "*"
 
 [dependencies.rand]
 version = "*"

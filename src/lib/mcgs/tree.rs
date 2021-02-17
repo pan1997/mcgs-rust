@@ -1,5 +1,5 @@
 use crate::lib::decision_process::SimpleMovingAverage;
-use crate::lib::mcgs::common::Internal;
+use crate::lib::mcgs::common::{HasInternal, Internal};
 use crate::lib::mcgs::samples::Samples;
 use crate::lib::mcgs::search_graph::{
     ConcurrentAccess, OutcomeStore, PriorPolicyStore, SearchGraph, SelectCountStore,
@@ -30,54 +30,30 @@ impl<O: Clone, I> Edge<O, I> {
         Edge {
             data: i,
             internal: UnsafeCell::new(Internal::new(outcome.clone())),
-            node: UnsafeCell::new(None),
+            node: Default::default(),
         }
     }
 }
 
 unsafe impl<O, I> Sync for Node<O, I> {}
 
-impl<I, O: Clone + SimpleMovingAverage> OutcomeStore<O> for Node<O, I> {
-    fn expected_outcome(&self) -> O {
-        unsafe { &*self.internal.get() }.expected_sample.clone()
+impl<I, O: Clone + SimpleMovingAverage> HasInternal<O> for Node<O, I> {
+    fn internal(&self) -> &Internal<O> {
+        unsafe { &*self.internal.get() }
     }
 
-    fn is_solved(&self) -> bool {
-        unsafe { &*self.internal.get() }.is_solved()
-    }
-
-    fn add_sample(&self, outcome: &O, weight: u32) {
-        unsafe { &mut *self.internal.get() }.add_sample(outcome, weight)
-    }
-
-    fn sample_count(&self) -> u32 {
-        unsafe { &*self.internal.get() }.sample_count
-    }
-
-    fn mark_solved(&self, outcome: &O) {
-        unsafe { &mut *self.internal.get() }.fix(outcome)
+    fn internal_mut(&self) -> &mut Internal<O> {
+        unsafe { &mut *self.internal.get() }
     }
 }
 
-impl<I, O: Clone + SimpleMovingAverage> OutcomeStore<O> for Edge<O, I> {
-    fn expected_outcome(&self) -> O {
-        unsafe { &*self.internal.get() }.expected_sample.clone()
+impl<I, O: Clone + SimpleMovingAverage> HasInternal<O> for Edge<O, I> {
+    fn internal(&self) -> &Internal<O> {
+        unsafe { &*self.internal.get() }
     }
 
-    fn is_solved(&self) -> bool {
-        unsafe { &*self.internal.get() }.is_solved()
-    }
-
-    fn add_sample(&self, outcome: &O, weight: u32) {
-        unsafe { &mut *self.internal.get() }.add_sample(outcome, weight)
-    }
-
-    fn sample_count(&self) -> u32 {
-        unsafe { &*self.internal.get() }.sample_count
-    }
-
-    fn mark_solved(&self, outcome: &O) {
-        unsafe { &mut *self.internal.get() }.fix(outcome)
+    fn internal_mut(&self) -> &mut Internal<O> {
+        unsafe { &mut *self.internal.get() }
     }
 }
 

@@ -27,12 +27,7 @@ fn main() {
         Hex::new(11, 11),
         //SafeTree::<OnlyAction<_>, _>::new(0.0),
         SafeGraph::<_, OnlyAction<_>, _>::new(0.0),
-        WeightedRandomPolicyWithExpDepth::new(
-            RandomPolicy,
-            UctPolicy::new(2.4),
-            0.05,
-            -1.5,
-        ),
+        WeightedRandomPolicyWithExpDepth::new(RandomPolicy, UctPolicy::new(2.4), 0.05, -1.5),
         BlockExpansionFromBasic::new(BasicExpansion::new(RandomSimulator)),
         ZobHash::new(11, 11),
         MiniMaxPropagationTask::new(),
@@ -40,7 +35,7 @@ fn main() {
         GraphBasedPrune {
             delta: 0.05,
             clip: 1.0,
-            margin: 10
+            margin: 10,
         },
         default_cpu,
     );

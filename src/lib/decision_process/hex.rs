@@ -1,8 +1,8 @@
 use crate::lib::decision_process::{DecisionProcess, Simulator};
-use std::fmt::{Display, Formatter};
-use rand::{thread_rng, Rng};
-use rand::prelude::SliceRandom;
 use crate::lib::mcgs::graph::Hsh;
+use rand::prelude::SliceRandom;
+use rand::{thread_rng, Rng};
+use std::fmt::{Display, Formatter};
 
 type Player = i8;
 
@@ -45,10 +45,10 @@ impl Hex {
             let mut row = reachable[cursor];
             //println!("Cursor: {}, row: {:011b}", cursor, row);
             if row == 0 {
-                return cursor
+                return cursor;
             }
 
-            let mut row_prev = row;
+            let row_prev = row;
             // expand row horizontally
             loop {
                 let nr = ((row << 1) | (row >> 1) | row) & pieces[cursor];
@@ -62,7 +62,7 @@ impl Hex {
             let mut flag = true;
             if row != row_prev {
                 //println!("Cursor: {}, row: {:011b}", cursor, row);
-                while (cursor > 0) {
+                while cursor > 0 {
                     cursor -= 1;
                     let new = (reachable[cursor] | (row << 1) | row) & pieces[cursor];
                     if new != reachable[cursor] {
@@ -78,7 +78,7 @@ impl Hex {
 
             if flag {
                 if cursor + 1 == pieces.len() {
-                    return cursor + 1
+                    return cursor + 1;
                 }
                 let next_row = (row | (row >> 1)) & pieces[cursor + 1];
                 cursor += 1;
@@ -88,7 +88,7 @@ impl Hex {
     }
 
     fn flip(pieces: &mut u32, index: u32) {
-        *pieces ^= (1 << index);
+        *pieces ^= 1 << index;
     }
 
     fn get(pieces: u32, index: u32) -> u32 {
@@ -158,15 +158,19 @@ impl DecisionProcess for Hex {
         // These need to be opposite, as the player who just moved is different from the current
         // player
         match s.player_to_move {
-            B => if Hex::count(&s.white_rows) == self.height as usize {
-                Some(1.0)
-            } else {
-                None
+            B => {
+                if Hex::count(&s.white_rows) == self.height as usize {
+                    Some(1.0)
+                } else {
+                    None
+                }
             }
-            W => if Hex::count(&s.black_columns) == self.width as usize {
-                Some(-1.0)
-            } else {
-                None
+            W => {
+                if Hex::count(&s.black_columns) == self.width as usize {
+                    Some(-1.0)
+                } else {
+                    None
+                }
             }
             _ => panic!("illegal player"),
         }
@@ -212,7 +216,11 @@ impl Display for Move {
 
 pub struct HexRandomSimulator;
 impl Simulator<Hex> for HexRandomSimulator {
-    fn sample_outcome(&self, d: &Hex, state: &mut <Hex as DecisionProcess>::State) -> <Hex as DecisionProcess>::Outcome {
+    fn sample_outcome(
+        &self,
+        d: &Hex,
+        state: &mut <Hex as DecisionProcess>::State,
+    ) -> <Hex as DecisionProcess>::Outcome {
         let mut actions: Vec<Move> = d.legal_actions(state).collect();
         actions.shuffle(&mut thread_rng());
         let mut u = vec![];
@@ -222,7 +230,7 @@ impl Simulator<Hex> for HexRandomSimulator {
                 while let Some(undo) = u.pop() {
                     d.undo_transition(state, undo);
                 }
-                return o.unwrap()
+                return o.unwrap();
             }
             u.push(d.transition(state, &m));
         }
@@ -231,7 +239,7 @@ impl Simulator<Hex> for HexRandomSimulator {
             d.undo_transition(state, undo);
         }
         outcome
-            /*
+        /*
         println!("{}", state);
         println!("{:?} {:?}", state.white_rows, state.black_columns);
         //println!("{} {}", Hex::count())
@@ -241,14 +249,14 @@ impl Simulator<Hex> for HexRandomSimulator {
 
 pub struct ZobHash {
     w_keys: Vec<Vec<u64>>,
-    b_keys: Vec<Vec<u64>>
+    b_keys: Vec<Vec<u64>>,
 }
 
 impl ZobHash {
     pub fn new(w: usize, h: usize) -> Self {
         ZobHash {
             w_keys: (0..h).map(|_| ZobHash::random_vec(w)).collect(),
-            b_keys: (0..w).map(|_| ZobHash::random_vec(h)).collect()
+            b_keys: (0..w).map(|_| ZobHash::random_vec(h)).collect(),
         }
     }
 
@@ -277,8 +285,6 @@ impl Hsh<Board> for ZobHash {
     }
 }
 
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -301,12 +307,12 @@ mod tests {
     #[test]
     fn t2() {
         let h1 = vec![1901, 51, 47, 450, 421, 347, 293, 1067, 309, 1192, 2047];
-        let h2= vec![520, 849, 682, 346, 733, 40, 982, 487, 646, 1022, 382];
+        let h2 = vec![520, 849, 682, 346, 733, 40, 982, 487, 646, 1022, 382];
         let game = Hex::new(11, 11);
-        let mut b = Board {
+        let b = Board {
             white_rows: h1,
             black_columns: h2,
-            player_to_move: B
+            player_to_move: B,
         };
         println!("{}", b);
         for x in b.white_rows.iter() {
@@ -316,5 +322,4 @@ mod tests {
         let actions: Vec<Move> = game.legal_actions(&b).collect();
         println!("{:?}", actions);
     }
-
 }

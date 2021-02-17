@@ -62,7 +62,7 @@ fn main() {
         GraphBasedPrune {
             delta: 0.05,
             clip: 1.0,
-            margin: 10
+            margin: 4,
         },
         default_cpu,
     );

@@ -20,7 +20,6 @@ use num::FromPrimitive;
 use std::fmt::Display;
 use std::marker::PhantomData;
 use std::ops::Deref;
-use std::process::exit;
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
@@ -45,8 +44,7 @@ impl<E, N, V> TrajectoryPruner<E, N, V> for AlwaysExpand {
 pub struct GraphBasedPrune<R> {
     pub delta: R,
     pub clip: R,
-    pub margin: u32
-    //maximum_weight: u32
+    pub margin: u32, //maximum_weight: u32
 }
 impl<E, N, V, R> TrajectoryPruner<E, N, V> for GraphBasedPrune<R>
 where
@@ -67,10 +65,10 @@ where
                 //let e_sample_count = edge.sample_count();
                 //let mut o = n_outcome
                 //    .scale(FromPrimitive::from_u32(e_sample_count + 1).unwrap())
-                 //   .sub(&e_outcome.scale(FromPrimitive::from_u32(e_sample_count).unwrap()));
-                let mut o = n_outcome.sub(&e_outcome).scale(FromPrimitive::from_f32(1000.0)
-                    .unwrap());
-                // if n is greater, it is 1 else 0
+                //   .sub(&e_outcome.scale(FromPrimitive::from_u32(e_sample_count).unwrap()));
+                let mut o = n_outcome
+                    .sub(&e_outcome)
+                    .scale(FromPrimitive::from_f32(1000.0).unwrap());
                 o.clip(self.clip);
                 SelectionResult::Propagate(n, o, 1)
             } else {
@@ -330,44 +328,29 @@ where
         mut outcome: P::Outcome,
         mut weight: u32,
     ) {
-        //let mut last_terminal_outcome = if node.is_solved() {
-        //    Some(node.expected_outcome())
-        //} else {
-        //    None
-        //};
         let mut last_node = node;
-        let mut depth = 0;
         while let Some((node, edge, agent)) = trajectory.pop() {
             node.lock();
-
-            /*
-            // scale it with depth, so that deeper lines are weighed more
-            let w = if depth > 8 {
-                weight * 8
-            } else if depth > 6 {
-                weight * 4
-            } else if depth > 4 {
-                weight * 2
+            let n_count = node.selection_count();
+            let w = if n_count > 409600 { 16 * weight } else if n_count > 65536 {
+                8 * weight
+            } else if n_count > 16384 {
+                4 * weight
+            } else if n_count > 1024 {
+                2 * weight
             } else {
                 weight
-            };*/
-            let w = weight;
+            };
             if last_node.is_solved() {
                 edge.mark_solved(&last_node.expected_outcome());
             } else {
                 edge.add_sample(&outcome, w);
             }
             node.add_sample(&outcome, w);
-
             self.propagation_task
                 .process(&self.search_graph, node, &outcome, agent);
-
-            //if last_node_terminal && !node.is_solved() {
-            //    last_node_terminal = false
-            //}
             node.unlock();
             last_node = node;
-            depth += 1;
         }
     }
 
@@ -402,7 +385,7 @@ where
         let undo_stack = &mut vec![];
         let mut short_count = 0;
         let mut batch = self.expand_operation.new_batch();
-        while trajectories.len() < size && short_count < 2 * size {
+        while trajectories.len() < size && short_count < 24 * size {
             let mut trajectory = vec![];
             let s = self.select(root, state, &mut trajectory, undo_stack);
             match s {
@@ -710,7 +693,8 @@ mod tests {
     use crate::lib::decision_process::c4::C4;
     use crate::lib::decision_process::graph_dp::tests::{problem1, problem2, problem3, DSim};
     use crate::lib::decision_process::graph_dp::GHash;
-    use crate::lib::decision_process::{DefaultSimulator, RandomSimulator};
+    use crate::lib::decision_process::hex::{Hex, HexRandomSimulator};
+    use crate::lib::decision_process::DefaultSimulator;
     use crate::lib::mcgs::expansion_traits::{
         BasicExpansion, BasicExpansionWithUniformPrior, BlockExpansionFromBasic,
     };
@@ -719,7 +703,6 @@ mod tests {
     use crate::lib::mcgs::tree::tests::print_tree;
     use crate::lib::mcgs::tree::SafeTree;
     use crate::lib::{ActionWithStaticPolicy, OnlyAction};
-    use crate::lib::decision_process::hex::{Hex, HexRandomSimulator};
 
     #[test]
     fn random() {
@@ -889,7 +872,7 @@ mod tests {
             GraphBasedPrune {
                 delta: 0.01,
                 clip: 1.0,
-                margin: 2
+                margin: 2,
             },
             1,
         );

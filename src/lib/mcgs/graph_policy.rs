@@ -101,12 +101,14 @@ where
 
 pub struct UctPolicy {
     exploration_weight: f32,
+    q_threshold: f32
 }
 
 impl UctPolicy {
     pub fn new(w: f32) -> Self {
         UctPolicy {
             exploration_weight: w,
+            q_threshold: 1.0
         }
     }
 }
@@ -142,8 +144,7 @@ where
                 .unwrap();
 
             // No need to iterate over other edges if we have one winning edge
-            // TODO: generalise this
-            if q >= 1.0 {
+            if q >= self.q_threshold {
                 return edge_index;
             }
 
@@ -207,11 +208,6 @@ where
             } else {
                 1.0
             };
-
-            // TODO: generalise this
-            if q >= 1.0 {
-                return edge_index;
-            }
 
             let p_uct = self.puct_init
                 + ((node_selection_count + self.puct_base + 1.0) / self.puct_base).ln();

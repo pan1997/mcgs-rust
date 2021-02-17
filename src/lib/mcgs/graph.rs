@@ -1,7 +1,7 @@
 use crate::lib::decision_process::SimpleMovingAverage;
-use crate::lib::mcgs::common::Internal;
+use crate::lib::mcgs::common::{HasInternal, Internal};
 use crate::lib::mcgs::search_graph::{
-    ConcurrentAccess, OutcomeStore, PriorPolicyStore, SearchGraph, SelectCountStore,
+    ConcurrentAccess, PriorPolicyStore, SearchGraph, SelectCountStore,
 };
 use crate::lib::{ActionWithStaticPolicy, OnlyAction};
 use dashmap::DashMap;
@@ -11,9 +11,6 @@ use std::cell::UnsafeCell;
 use std::hash::Hash;
 use std::ops::Deref;
 use std::sync::Arc;
-
-// Graph as of now suffers from stability issues
-// the value of nodes has a lot of random flail
 
 pub struct Node<O, I> {
     lock: Mutex,
@@ -39,72 +36,23 @@ impl<O: Clone, I> Edge<O, I> {
 
 unsafe impl<O, I> Sync for Node<O, I> {}
 
-impl<I, O: Clone + SimpleMovingAverage> OutcomeStore<O> for Node<O, I> {
-    fn expected_outcome(&self) -> O {
-        unsafe { &*self.internal.get() }.expected_sample.clone()
+impl<I, O: Clone + SimpleMovingAverage> HasInternal<O> for Node<O, I> {
+    fn internal(&self) -> &Internal<O> {
+        unsafe { &*self.internal.get() }
     }
 
-    fn is_solved(&self) -> bool {
-        unsafe { &*self.internal.get() }.is_solved()
-    }
-
-    fn add_sample(&self, outcome: &O, weight: u32) {
-        unsafe { &mut *self.internal.get() }.add_sample(outcome, weight)
-    }
-
-    fn sample_count(&self) -> u32 {
-        unsafe { &*self.internal.get() }.sample_count
-    }
-
-    fn mark_solved(&self, outcome: &O) {
-        unsafe { &mut *self.internal.get() }.fix(outcome)
+    fn internal_mut(&self) -> &mut Internal<O> {
+        unsafe { &mut *self.internal.get() }
     }
 }
 
-impl<I, O: Clone + SimpleMovingAverage> OutcomeStore<O> for Edge<O, I> {
-    // Not locking the child for now, as we can live with (slightly) stale values
-    fn expected_outcome(&self) -> O {
-        /*let n = unsafe { &*self.node.get() };
-        // TODO: why is this needed
-        if n.is_some() {
-            n.as_ref().unwrap().expected_outcome()
-        } else {
-            unsafe { &*self.internal.get() }.expected_sample.clone()
-        }*/
-        unsafe { &*self.internal.get() }.expected_sample.clone()
+impl<I, O: Clone + SimpleMovingAverage> HasInternal<O> for Edge<O, I> {
+    fn internal(&self) -> &Internal<O> {
+        unsafe { &*self.internal.get() }
     }
 
-    fn is_solved(&self) -> bool {
-        /*let n = unsafe { &*self.node.get() };
-        // TODO: why is this needed
-        if n.is_some() {
-            n.as_ref().unwrap().is_solved()
-        } else {
-            false
-        }*/
-        //unsafe { &*self.node.get()}.as_ref().unwrap().is_solved()
-        unsafe { &*self.internal.get() }.is_solved()
-    }
-
-    fn add_sample(&self, outcome: &O, weight: u32) {
-        //unsafe { &*self.node.get()}.as_ref().unwrap().expected_outcome()
-        unsafe { &mut *self.internal.get() }.add_sample(outcome, weight)
-    }
-
-    fn sample_count(&self) -> u32 {
-        /*let n = unsafe { &*self.node.get() };
-        // TODO: why is this needed
-        if n.is_some() {
-            n.as_ref().unwrap().sample_count()
-        } else {
-            0
-        }*/
-        unsafe { &*self.internal.get() }.sample_count
-    }
-
-    fn mark_solved(&self, outcome: &O) {
-        //unsafe { &*self.node.get()}.as_ref().unwrap().expected_outcome()
-        unsafe { &mut *self.internal.get() }.fix(outcome)
+    fn internal_mut(&self) -> &mut Internal<O> {
+        unsafe { &mut *self.internal.get() }
     }
 }
 

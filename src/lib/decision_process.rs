@@ -1,4 +1,3 @@
-use num::FromPrimitive;
 
 pub trait DecisionProcess {
     type Agent: Copy;
@@ -57,14 +56,6 @@ pub trait WinnableOutcome<Agent>: Outcome<Agent> {
 pub trait ComparableOutcome<Agent>: Outcome<Agent> {
     fn is_better_than(&self, other: &Self, a: Agent) -> bool;
 }
-/*
-impl<T: Copy> Outcome<()> for T {
-    type RewardType = T;
-
-    fn reward_for_agent(&self, _: ()) -> Self::RewardType {
-        *self
-    }
-}*/
 
 impl SimpleMovingAverage for f32 {
     fn update_with_moving_average(&mut self, o: &Self, x: u32, y: u32) {
@@ -113,7 +104,6 @@ where
 
 use rand::prelude::IteratorRandom;
 use rand::prelude::SliceRandom;
-use std::ops::{Add, Sub};
 
 pub struct RandomSimulator;
 impl<D: DecisionProcess> Simulator<D> for RandomSimulator {
@@ -246,12 +236,12 @@ impl Distance for Vec<f32> {
         s.sqrt()
     }
 
-    fn clip(&mut self, n: Self::NormType) {
-        self.iter_mut().for_each(|x| x.clip(n))
-    }
-
     fn sub(&self, other: &Self) -> Self {
         self.iter().zip(other.iter()).map(|(a, b)| a - b).collect()
+    }
+
+    fn clip(&mut self, n: Self::NormType) {
+        self.iter_mut().for_each(|x| x.clip(n))
     }
 
     fn scale(&self, w: Self::NormType) -> Self {

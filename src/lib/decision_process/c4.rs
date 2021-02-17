@@ -3,6 +3,7 @@ use crate::lib::mcgs::graph::Hsh;
 use rand::{thread_rng, Rng};
 use std::fmt::{Display, Formatter};
 use std::num::Wrapping;
+use tch::Tensor;
 
 type Player = i8;
 
@@ -162,6 +163,16 @@ impl C4 {
             size: width * height,
         }
     }
+
+    fn generate_tensor(&self, state: &Board) -> Tensor {
+        let dim = [self.height as i64, self.width as i64];
+        let white = Tensor::of_slice(&state.white_pieces).reshape(&dim);
+        let black = Tensor::of_slice(&state.black_pieces).reshape(&dim);
+        match state.player_to_move {
+            B => Tensor::stack(&[black, white], 0),
+            _ => Tensor::stack(&[white, black], 0),
+        }
+    }
 }
 
 impl Display for Board {
@@ -305,19 +316,6 @@ mod tests {
         ActionWithStaticPolicy, NoFilteringAndUniformPolicyForPuct, NoProcessing, OnlyAction,
     };
 
-    /*
-    #[test]
-    fn basic() {
-        assert_eq!(opponent(B), W);
-
-        assert_eq!(0.0.reward_for_agent(W), 0.0);
-        assert_eq!(0.0.reward_for_agent(B), 0.0);
-        assert_eq!(1.0.reward_for_agent(W), 1.0);
-        assert_eq!(1.0.reward_for_agent(B), -1.0);
-        assert_eq!(-1.0.reward_for_agent(W), -1.0);
-        assert_eq!(-1.0.reward_for_agent(B), 1.0);
-    }*/
-
     #[test]
     fn test_moves() {
         let c4 = C4::new(7, 6);
@@ -402,5 +400,21 @@ mod tests {
             s.once(node.clone(), &mut state);
         }
         node_distribution(s.store(), &node);
+    }
+
+    #[test]
+    fn tensor_test() {
+        let c4 = C4::new(7, 6);
+        let b = &mut c4.start_state();
+        println!("{}", b);
+        //let moves = vec![4, 4, 3, 3, 5, 5, 6];
+        let moves = vec![4, 3, 3, 2, 2, 1, 2, 1, 1];
+        for col in moves {
+            assert!(c4.is_finished(b).is_none());
+            c4.transition(b, &Move(col));
+            println!("{}", b);
+        }
+        let u = c4.generate_tensor(b);
+        u.print();
     }
 }
