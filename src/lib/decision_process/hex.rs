@@ -226,7 +226,7 @@ impl Display for Board {
 }
 impl Display for Move {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "({},{})", self.0, self.1)
+        write!(f, "{}{}", (self.0 + 65) as u8 as char, self.1)
     }
 }
 
