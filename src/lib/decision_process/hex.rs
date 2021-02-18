@@ -241,16 +241,15 @@ impl Simulator<Hex> for HexRandomSimulator {
         actions.shuffle(&mut thread_rng());
         let mut u = vec![];
         for m in actions {
-            let o = d.is_finished(state);
-            if o.is_some() {
-                while let Some(undo) = u.pop() {
-                    d.undo_transition(state, undo);
-                }
-                return o.unwrap();
-            }
             u.push(d.transition(state, &m));
         }
-        let outcome = d.is_finished(state).unwrap();
+        // This works because the outcome in game of hex is exclusive. there can be only one end
+        // to end path on the board
+        let outcome = if Hex::count(&state.white_rows) == d.height as usize {
+            1.0
+        } else {
+            -1.0
+        };
         while let Some(undo) = u.pop() {
             d.undo_transition(state, undo);
         }

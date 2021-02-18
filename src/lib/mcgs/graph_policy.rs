@@ -101,14 +101,14 @@ where
 
 pub struct UctPolicy {
     exploration_weight: f32,
-    q_threshold: f32
+    q_threshold: f32,
 }
 
 impl UctPolicy {
     pub fn new(w: f32) -> Self {
         UctPolicy {
             exploration_weight: w,
-            q_threshold: 1.0
+            q_threshold: 1.0,
         }
     }
 }

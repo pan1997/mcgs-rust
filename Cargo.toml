@@ -27,5 +27,9 @@ name = "c4"
 path = "src/c4.rs"
 
 [[bin]]
+name = "c4_nnet"
+path = "src/c4_self_play_games.rs"
+
+[[bin]]
 name = "hex"
 path = "src/hex.rs"

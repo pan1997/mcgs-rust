@@ -2,6 +2,7 @@ mod common;
 pub mod expansion_traits;
 pub mod graph;
 pub mod graph_policy;
+pub(crate) mod nnet;
 mod samples;
 pub mod search_graph;
 pub mod tree;
@@ -332,7 +333,9 @@ where
         while let Some((node, edge, agent)) = trajectory.pop() {
             node.lock();
             let n_count = node.selection_count();
-            let w = if n_count > 409600 { 16 * weight } else if n_count > 65536 {
+            let w = if n_count > 409600 {
+                16 * weight
+            } else if n_count > 65536 {
                 8 * weight
             } else if n_count > 16384 {
                 4 * weight
@@ -354,7 +357,7 @@ where
         }
     }
 
-    pub(crate) fn one_iteration(&self, root: &G::Node, state: &mut P::State)
+    pub fn one_iteration(&self, root: &G::Node, state: &mut P::State)
     where
         X: ExpansionTrait<P, D, H::K>,
     {

@@ -25,7 +25,7 @@ pub struct Board {
 #[derive(Clone, Copy)]
 pub struct Move(pub u8);
 
-pub(crate) struct C4 {
+pub struct C4 {
     width: usize,
     height: usize,
     size: usize, // = width * height
@@ -135,6 +135,10 @@ impl DecisionProcess for C4 {
 }
 
 impl C4 {
+    pub fn width(&self) -> usize {
+        self.width
+    }
+
     fn translate(&self, r: usize, c: usize) -> usize {
         if c < self.width && r < self.size {
             self.width * r + c
@@ -156,7 +160,7 @@ impl C4 {
         3
     }
 
-    pub(crate) fn new(width: usize, height: usize) -> C4 {
+    pub fn new(width: usize, height: usize) -> C4 {
         C4 {
             width,
             height,
@@ -164,13 +168,13 @@ impl C4 {
         }
     }
 
-    fn generate_tensor(&self, state: &Board) -> Tensor {
+    pub(crate) fn generate_tensor(&self, state: &Board) -> Tensor {
         let dim = [self.height as i64, self.width as i64];
         let white = Tensor::of_slice(&state.white_pieces).reshape(&dim);
         let black = Tensor::of_slice(&state.black_pieces).reshape(&dim);
         match state.player_to_move {
-            B => Tensor::stack(&[black, white], 0),
-            _ => Tensor::stack(&[white, black], 0),
+            B => Tensor::stack(&[black, white], 0).unsqueeze(0),
+            _ => Tensor::stack(&[white, black], 0).unsqueeze(0),
         }
     }
 }
@@ -269,13 +273,13 @@ impl ComparableOutcome<Player> for f64 {
     }
 }
 
-pub(crate) struct ZobHash {
+pub struct ZobHash {
     keys_w: Vec<u64>,
     keys_b: Vec<u64>,
 }
 
 impl ZobHash {
-    pub(crate) fn new(l: usize) -> Self {
+    pub fn new(l: usize) -> Self {
         ZobHash {
             keys_w: (0..l).map(|_| thread_rng().gen()).collect(),
             keys_b: (0..l).map(|_| thread_rng().gen()).collect(),

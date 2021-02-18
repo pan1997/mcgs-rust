@@ -1,4 +1,3 @@
-
 pub trait DecisionProcess {
     type Agent: Copy;
     type Action;
@@ -249,7 +248,7 @@ impl Distance for Vec<f32> {
     }
 }
 
-pub(crate) mod c4;
+pub mod c4;
 pub(crate) mod graph_dp;
 pub mod hex;
 
