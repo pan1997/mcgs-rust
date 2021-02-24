@@ -610,6 +610,7 @@ where
         for edge_index in 0..self.search_graph.children_count(root) {
             let edge = self.search_graph.get_edge(root, edge_index);
             let node = self.search_graph.get_target_node(edge);
+            print!("====>");
             self.print_node(root, edge, agent, edge);
             let trajectory = &mut vec![];
             let u = self.problem.transition(state, &edge);
@@ -677,8 +678,6 @@ where
             let agent = self.problem.agent_to_act(state);
             let best_edge_index =
                 PvPolicy.select(&self.problem, &self.search_graph, root, agent, 0);
-            //MostVisitedPolicy.select(&self.problem, &self.search_graph,
-            //root);
             let edge = self.search_graph.get_edge(root, best_edge_index);
             if self.search_graph.is_dangling(edge) {
                 break;
@@ -724,10 +723,9 @@ impl<K: Clone, O: Clone, EI: Clone> Clone for ExpansionResult<K, O, EI> {
 }
 
 fn color_from_confidence(s: &str, c: u32) -> ColoredString {
-    /*
-    let part = (c * 255 / 100) as u8;
-    s.truecolor(255 - part, part, 0)*/
-    if c < 50 {
+    if c < 25 {
+        s.strikethrough()
+    } else if c < 50 {
         s.red()
     } else if c < 65 {
         s.yellow()
@@ -739,9 +737,7 @@ fn color_from_confidence(s: &str, c: u32) -> ColoredString {
         s.blue()
     } else {
         s.magenta()
-    } // else {
-      //   s.white()
-      //}
+    }
 }
 
 #[cfg(test)]

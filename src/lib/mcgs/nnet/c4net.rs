@@ -35,11 +35,12 @@ where
     G::Node: OutcomeStore<<C4 as DecisionProcess>::Outcome>,
     G::Edge: SelectCountStore + Deref<Target = <C4 as DecisionProcess>::Action>,
 {
-    let mut counts = vec![0.0f32; p.width()];
+    let mut counts = vec![1.0f32; p.width()];
+    // We need to normalise this as log_policy is not defined (or is -inf) otherwise
     for edge_index in 0..g.children_count(n) {
         let edge = g.get_edge(n, edge_index);
         let mv: &<C4 as DecisionProcess>::Action = edge;
-        counts[mv.0 as usize] = edge.selection_count() as f32;
+        counts[mv.0 as usize] += edge.selection_count() as f32;
     }
     let total: f32 = counts.iter().sum();
     counts.iter_mut().for_each(|x| *x /= total);

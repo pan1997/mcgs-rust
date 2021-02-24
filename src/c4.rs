@@ -20,7 +20,14 @@ use crate::lib::{ActionWithStaticPolicy, OnlyAction};
 use std::sync::atomic::Ordering;
 use text_io::read;
 
+
 fn main() {
+    println!("Hello World");
+}
+
+
+
+fn main1() {
     /*
     let mut s = Search::new(
         C4::new(9, 7),
@@ -42,7 +49,7 @@ fn main() {
     );*/
     let default_cpu = 8;
     let mut s = Search::new(
-        C4::new(9, 7),
+        C4::new(19, 19),
         SafeGraph::new(0.0),
         //SafeTree::new(0.0),
         //WeightedRandomPolicyWithExpDepth::new(RandomPolicy, UctPolicy::new(2.4), 0.05, -1.5),
@@ -55,7 +62,7 @@ fn main() {
         ),
         BlockExpansionFromBasic::new(BasicExpansion::new(RandomSimulator)),
         //BlockExpansionFromBasic::new(BasicExpansionWithUniformPrior::new(OneStepGreedySimulator)),
-        ZobHash::new(63),
+        ZobHash::new(19 * 19),
         //NoHash,
         MiniMaxPropagationTask::new(),
         //AlwaysExpand,
