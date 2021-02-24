@@ -1,5 +1,6 @@
 mod lib;
 
+use crate::lib::decision_process::hex::HexRandomSimulator;
 use crate::lib::decision_process::hex::{Hex, Move, ZobHash};
 use crate::lib::decision_process::{DecisionProcess, DefaultSimulator};
 use crate::lib::mcgs::expansion_traits::{
@@ -18,9 +19,8 @@ use crate::lib::mcgs::MiniMaxPropagationTask;
 use crate::lib::mcgs::Search;
 use crate::lib::{ActionWithStaticPolicy, OnlyAction};
 use std::sync::atomic::Ordering;
-use text_io::read;
 use std::time::Instant;
-use crate::lib::decision_process::hex::HexRandomSimulator;
+use text_io::read;
 
 fn main() {
     let default_cpu = 12;
@@ -64,7 +64,7 @@ fn main() {
                 println!("{}", state);
                 let time_limit: u128 = read!();
                 let node = s.get_new_node(&mut state); // search_graph().create_node(&state);
-                //let t = Instant::now();
+                                                       //let t = Instant::now();
                 let elapsed =
                     s.start_parallel(&node, &state, None, Some(time_limit), Some(97), false);
                 //for i in 0..2000 {

@@ -53,7 +53,7 @@ fn main() {
             0.05,
             -1.5,
         ),
-        BlockExpansionFromBasic::new(BasicExpansion::new(OneStepGreedySimulator)),
+        BlockExpansionFromBasic::new(BasicExpansion::new(RandomSimulator)),
         //BlockExpansionFromBasic::new(BasicExpansionWithUniformPrior::new(OneStepGreedySimulator)),
         ZobHash::new(63),
         //NoHash,
@@ -91,7 +91,7 @@ fn main() {
                 let time_limit: u128 = read!();
                 let node = s.get_new_node(&mut state); // search_graph().create_node(&state);
                 let elapsed =
-                    s.start_parallel(&node, &state, None, Some(time_limit), Some(97), false);
+                    s.start_parallel(&node, &state, None, Some(time_limit), Some(96), false);
                 let agent = s.problem().agent_to_act(&state);
                 let best_edge = s.search_graph().get_edge(
                     &node,

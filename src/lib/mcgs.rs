@@ -18,7 +18,7 @@ use crate::lib::mcgs::graph::Hsh;
 use crate::lib::mcgs::SelectionResult::Expand;
 use colored::{ColoredString, Colorize};
 use num::FromPrimitive;
-use std::fmt::Display;
+use std::fmt::{Display, Debug};
 use std::marker::PhantomData;
 use std::ops::Deref;
 use std::thread::sleep;
@@ -82,10 +82,10 @@ where
 }
 
 pub trait ExtraPropagationTask<G, N, O, A> {
-    fn process(&self, graph: &G, node: &N, outcome: &O, agent: A);
+    fn process(&self, graph: &G, node: &N, outcome: &O, agent: A) -> bool;
 }
 impl<G, N, O, A> ExtraPropagationTask<G, N, O, A> for () {
-    fn process(&self, _: &G, _: &N, _: &O, _: A) {}
+    fn process(&self, _: &G, _: &N, _: &O, _: A) -> bool { false }
 }
 
 pub struct MiniMaxPropagationTask<P> {
@@ -106,7 +106,7 @@ where
     G::Edge: OutcomeStore<O> + SelectCountStore,
     A: Copy,
 {
-    fn process(&self, graph: &G, node: &G::Node, outcome: &O, agent: A) {
+    fn process(&self, graph: &G, node: &G::Node, outcome: &O, agent: A) -> bool {
         let mut is_solved = true;
         for edge_index in 0..graph.children_count(node) {
             let edge = graph.get_edge(node, edge_index);
@@ -126,6 +126,7 @@ where
             // technically no. it shouldn't mess with it
             node.mark_solved(outcome)
         }
+        is_solved
     }
 }
 
@@ -264,6 +265,11 @@ where
             }
 
             let next_node = self.search_graph.get_target_node(edge);
+            // We need an additional terminal check, as we can mark non leaf nodes as terminal
+            if next_node.is_solved() {
+                node.unlock();
+                return SelectionResult::Propagate(next_node, next_node.expected_outcome(), 1);
+            }
             next_node.lock();
 
             match self.trajectory_pruner.check_for_pruning(edge, next_node) {
@@ -280,12 +286,6 @@ where
             // safe and doesn't cause a deadlock with back propagation, as propagation unlocks the
             // node before locking another.
             node.unlock();
-
-            // We need an additional terminal check, as we can mark non leaf nodes as terminal
-            if next_node.is_solved() {
-                next_node.unlock();
-                return SelectionResult::Propagate(next_node, next_node.expected_outcome(), 1);
-            }
 
             node = next_node;
         }
@@ -328,7 +328,7 @@ where
         node: &G::Node, // This is needed later for alpha beta
         mut outcome: P::Outcome,
         mut weight: u32,
-    ) {
+    ) where P::Outcome: Debug {
         let mut last_node = node;
         while let Some((node, edge, agent)) = trajectory.pop() {
             node.lock();
@@ -346,12 +346,17 @@ where
             };
             if last_node.is_solved() {
                 edge.mark_solved(&last_node.expected_outcome());
+                //println!("marked an edge as solved with: {:?}",edge.expected_outcome());
             } else {
                 edge.add_sample(&outcome, w);
             }
             node.add_sample(&outcome, w);
-            self.propagation_task
+            let marked = self.propagation_task
                 .process(&self.search_graph, node, &outcome, agent);
+            /*if marked {
+                println!("marked a node as solved with: {:?}, {:?}", outcome, node.expected_outcome
+                ());
+            }*/
             node.unlock();
             last_node = node;
         }
@@ -359,7 +364,7 @@ where
 
     pub fn one_iteration(&self, root: &G::Node, state: &mut P::State)
     where
-        X: ExpansionTrait<P, D, H::K>,
+        X: ExpansionTrait<P, D, H::K>,P::Outcome: Debug
     {
         let trajectory = &mut vec![];
         let undo_stack = &mut vec![];
@@ -382,7 +387,7 @@ where
 
     fn one_block(&self, root: &G::Node, state: &mut P::State, size: usize)
     where
-        X: BlockExpansionTrait<P, D, H::K>,
+        X: BlockExpansionTrait<P, D, H::K>,P::Outcome: Debug
     {
         let trajectories = &mut vec![];
         let undo_stack = &mut vec![];
@@ -484,7 +489,7 @@ where
         X: BlockExpansionTrait<P, D, H::K> + ExpansionTrait<P, D, H::K>,
         P::Action: Display,
         P::Agent: Display,
-        P::Outcome: WinnableOutcome<P::Agent> + Display,
+        P::Outcome: WinnableOutcome<P::Agent> + Display + Debug,
         <P::Outcome as Outcome<P::Agent>>::RewardType: Display,
     {
         let start_time = Instant::now();
@@ -510,6 +515,7 @@ where
                         Some(start_count),
                         &mut v,
                         256,
+                        true
                     );
                 }
             }
@@ -532,7 +538,7 @@ where
         X: ExpansionTrait<P, D, H::K> + BlockExpansionTrait<P, D, H::K>,
         P::Action: Display,
         P::Agent: Display,
-        P::Outcome: WinnableOutcome<P::Agent> + Display,
+        P::Outcome: WinnableOutcome<P::Agent> + Display + Debug,
         <P::Outcome as Outcome<P::Agent>>::RewardType: Display,
         <<P::Outcome as Outcome<P::Agent>>::RewardType as Distance>::NormType: Sync,
         G::Node: Sync,
@@ -574,11 +580,77 @@ where
                     Some(start_count),
                     &mut v,
                     1024,
+                        true
                 );
             }
+            self.mpv(
+                    root,
+                    &mut pv_state,
+                    Some(start_time),
+                    Some(start_count),
+                );
         })
         .unwrap();
         start_time.elapsed().as_millis()
+    }
+
+    pub fn mpv<'a>(
+        &self,
+        mut root: &'a G::Node,
+        state: &mut P::State,
+        start_time: Option<Instant>,
+        start_count: Option<u32>,
+    ) where
+        P::Action: Display,
+        P::Agent: Display,
+        P::Outcome: WinnableOutcome<P::Agent> + Display,
+        <P::Outcome as Outcome<P::Agent>>::RewardType: Display,
+    {
+        let agent = self.problem.agent_to_act(state);
+        for edge_index in 0..self.search_graph.children_count(root) {
+            let edge = self.search_graph.get_edge(root, edge_index);
+            let node = self.search_graph.get_target_node(edge);
+            self.print_node(root, edge, agent, edge);
+            let trajectory = &mut vec![];
+            let u = self.problem.transition(state, &edge);
+            self.print_pv(node, state, start_time, start_count, trajectory, 0, false);
+            self.problem.undo_transition(state, u);
+        }
+    }
+
+    fn print_node(
+        &self,
+        node: &G::Node,
+        edge: &G::Edge,
+        agent: P::Agent,
+        action: &P::Action
+    ) where
+        P::Action: Display,
+        P::Agent: Display,
+        P::Outcome: WinnableOutcome<P::Agent> + Display,
+        <P::Outcome as Outcome<P::Agent>>::RewardType: Display,{
+        let es = edge.selection_count();
+        let rs = node.selection_count();
+        let confidence = (if es == u32::MAX {
+            100
+        } else {
+            es as u64 * 100 / rs as u64
+        }) as u32;
+        let entry = if edge.is_solved() {
+            format!(
+                "[{}, {:.2}]-> ",
+                action,
+                edge.expected_outcome() //.reward_for_agent(agent)
+            )
+        } else {
+            format!(
+                "{{{}, {}k, {:.2}}}-> ",
+                action,
+                es / 1000,
+                edge.expected_outcome().reward_for_agent(agent)
+            )
+        };
+        print!("{}", color_from_confidence(&entry, confidence));
     }
 
     pub(crate) fn print_pv<'a>(
@@ -589,6 +661,7 @@ where
         start_count: Option<u32>,
         trajectory: &mut Vec<(&'a G::Node, &'a G::Edge)>,
         filter: u32,
+        detail: bool
     ) where
         P::Action: Display,
         P::Agent: Display,
@@ -614,28 +687,7 @@ where
             stack.push(self.problem.transition(state, action));
             if root.selection_count() > filter || root.is_solved() {
                 sl += 1;
-                let es = edge.selection_count();
-                let rs = root.selection_count();
-                let confidence = (if es == u32::MAX {
-                    100
-                } else {
-                    es as u64 * 100 / rs as u64
-                }) as u32;
-                let entry = if root.is_solved() {
-                    format!(
-                        "[{}, {:.2}]-> ",
-                        action,
-                        root.expected_outcome() //.reward_for_agent(agent)
-                    )
-                } else {
-                    format!(
-                        "{{{}, {}k, {:.2}}}-> ",
-                        action,
-                        es / 1000,
-                        root.expected_outcome().reward_for_agent(agent)
-                    )
-                };
-                print!("{}", color_from_confidence(&entry, confidence));
+                self.print_node(root, edge, agent, action);
             } else {
                 print!("{{?}}-> ");
             }
@@ -643,16 +695,18 @@ where
             root = self.search_graph.get_target_node(edge);
         }
         println!();
-        print!("{}kN ", selection_count / 1000);
-        if start_time.is_some() {
-            let elapsed = start_time.unwrap().elapsed().as_millis();
-            print!(
-                "in {}ms @{}kNps ",
-                elapsed,
-                selection_count as u128 / (elapsed + 1)
-            );
+        if detail {
+            print!("{}kN ", selection_count / 1000);
+            if start_time.is_some() {
+                let elapsed = start_time.unwrap().elapsed().as_millis();
+                print!(
+                    "in {}ms @{}kNps ",
+                    elapsed,
+                    selection_count as u128 / (elapsed + 1)
+                );
+            }
+            println!(" depth {}/{}", sl, trajectory.len());
         }
-        println!(" depth {}/{}", sl, trajectory.len());
         while let Some(u) = stack.pop() {
             self.problem.undo_transition(state, u);
         }
@@ -693,11 +747,11 @@ fn color_from_confidence(s: &str, c: u32) -> ColoredString {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::lib::decision_process::c4::C4;
+    use crate::lib::decision_process::c4::{C4, ZobHash, Move};
     use crate::lib::decision_process::graph_dp::tests::{problem1, problem2, problem3, DSim};
     use crate::lib::decision_process::graph_dp::GHash;
     use crate::lib::decision_process::hex::{Hex, HexRandomSimulator};
-    use crate::lib::decision_process::DefaultSimulator;
+    use crate::lib::decision_process::{DefaultSimulator, OneStepGreedySimulator};
     use crate::lib::mcgs::expansion_traits::{
         BasicExpansion, BasicExpansionWithUniformPrior, BlockExpansionFromBasic,
     };
@@ -933,6 +987,37 @@ mod tests {
             s.one_iteration(&n, state);
         }
         println!("{}", state);
-        s.print_pv(&n, state, None, None, &mut vec![], 1);
+        s.print_pv(&n, state, None, None, &mut vec![], 1, true);
+    }
+
+    #[test]
+    fn c4t23() {
+        let mut s = Search::new(
+            C4::new(9, 7),
+            SafeGraph::<_, OnlyAction<_>, _>::new(0.0),
+            WeightedRandomPolicyWithExpDepth::new(
+                RandomPolicy,
+                UctPolicy::new(2.4),
+                0.05,
+                -1.5,
+            ),
+            BlockExpansionFromBasic::new(BasicExpansion::new(OneStepGreedySimulator)),
+            ZobHash::new(63),
+            MiniMaxPropagationTask::new(),
+            GraphBasedPrune {
+                delta: 0.05,
+                clip: 1.0,
+                margin: 4,
+            },
+            1,
+        );
+        let mut state = s.problem().start_state();
+        let moves = [4, 3, 4, 3, 4];
+        for m in moves.iter() {
+            s.problem.transition(&mut state, &Move(*m as u8));
+        }
+        println!("{}", state);
+        let node = s.get_new_node(&mut state);
+        s.start_parallel(&node, &state, Some(2048), None, None, false);
     }
 }

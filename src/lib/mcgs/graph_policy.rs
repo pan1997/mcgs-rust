@@ -90,7 +90,8 @@ where
         for edge_index in 0..edge_count {
             let edge = store.get_edge(node, edge_index);
 
-            if edge.selection_count() > max_count && !edge.expected_outcome().is_losing_for(agent) {
+            if edge.selection_count() > max_count && !edge.expected_outcome().is_losing_for
+            (agent) || edge.expected_outcome().is_winning_for(agent) {
                 best_edge = edge_index;
                 max_count = edge.selection_count()
             }

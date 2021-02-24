@@ -116,10 +116,6 @@ impl DecisionProcess for C4 {
             let ld = self.count_chain_length(board, row, column, usize::MAX, usize::MAX);
             let ru = self.count_chain_length(board, row, column, 1, 1);
             let rd = self.count_chain_length(board, row, column, usize::MAX, 1);
-            /*println!(
-                "ll: {}, rr: {}, dd: {}, lu: {}, ld: {}, ru: {}, rd: {}",
-                ll, rr, dd, lu, ld, ru, rd
-            );*/
             if dd >= 3 || ll + rr >= 3 || lu + rd >= 3 || ld + ru >= 3 {
                 Some(match player_who_just_moved {
                     B => -1.0,
@@ -172,9 +168,10 @@ impl C4 {
         let dim = [self.height as i64, self.width as i64];
         let white = Tensor::of_slice(&state.white_pieces).reshape(&dim);
         let black = Tensor::of_slice(&state.black_pieces).reshape(&dim);
+        let empty = white.logical_or(&black).logical_not();
         match state.player_to_move {
-            B => Tensor::stack(&[black, white], 0).unsqueeze(0),
-            _ => Tensor::stack(&[white, black], 0).unsqueeze(0),
+            B => Tensor::stack(&[black, white, empty], 0).unsqueeze(0),
+            _ => Tensor::stack(&[white, black, empty], 0).unsqueeze(0),
         }
     }
 }
@@ -411,7 +408,6 @@ mod tests {
         let c4 = C4::new(7, 6);
         let b = &mut c4.start_state();
         println!("{}", b);
-        //let moves = vec![4, 4, 3, 3, 5, 5, 6];
         let moves = vec![4, 3, 3, 2, 2, 1, 2, 1, 1];
         for col in moves {
             assert!(c4.is_finished(b).is_none());

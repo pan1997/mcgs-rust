@@ -254,11 +254,6 @@ impl Simulator<Hex> for HexRandomSimulator {
             d.undo_transition(state, undo);
         }
         outcome
-        /*
-        println!("{}", state);
-        println!("{:?} {:?}", state.white_rows, state.black_columns);
-        //println!("{} {}", Hex::count())
-        panic!("should not reach here")*/
     }
 }
 
