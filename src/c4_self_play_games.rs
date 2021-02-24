@@ -1,5 +1,5 @@
 use crate::lib::decision_process::c4::C4;
-use crate::lib::decision_process::{DecisionProcess, OneStepGreedySimulator};
+use crate::lib::decision_process::{DecisionProcess, RandomSimulator};
 use crate::lib::mcgs::expansion_traits::BasicExpansion;
 use crate::lib::mcgs::graph::NoHash;
 use crate::lib::mcgs::graph_policy::UctPolicy;
@@ -19,7 +19,7 @@ fn generate_games(game_count: u32) -> SelfPlayData {
         C4::new(9, 7),
         SafeTree::<OnlyAction<_>, _>::new(0.0),
         UctPolicy::new(2.4),
-        BasicExpansion::new(OneStepGreedySimulator),
+        BasicExpansion::new(RandomSimulator),
         NoHash,
         (),
         AlwaysExpand,
