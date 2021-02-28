@@ -18,7 +18,7 @@ use crate::lib::mcgs::graph::Hsh;
 use crate::lib::mcgs::SelectionResult::Expand;
 use colored::{ColoredString, Colorize};
 use num::FromPrimitive;
-use std::fmt::{Display, Debug};
+use std::fmt::{Debug, Display};
 use std::marker::PhantomData;
 use std::ops::Deref;
 use std::thread::sleep;
@@ -85,7 +85,9 @@ pub trait ExtraPropagationTask<G, N, O, A> {
     fn process(&self, graph: &G, node: &N, outcome: &O, agent: A) -> bool;
 }
 impl<G, N, O, A> ExtraPropagationTask<G, N, O, A> for () {
-    fn process(&self, _: &G, _: &N, _: &O, _: A) -> bool { false }
+    fn process(&self, _: &G, _: &N, _: &O, _: A) -> bool {
+        false
+    }
 }
 
 pub struct MiniMaxPropagationTask<P> {
@@ -328,7 +330,9 @@ where
         node: &G::Node, // This is needed later for alpha beta
         mut outcome: P::Outcome,
         mut weight: u32,
-    ) where P::Outcome: Debug {
+    ) where
+        P::Outcome: Debug,
+    {
         let mut last_node = node;
         while let Some((node, edge, agent)) = trajectory.pop() {
             node.lock();
@@ -351,7 +355,8 @@ where
                 edge.add_sample(&outcome, w);
             }
             node.add_sample(&outcome, w);
-            let marked = self.propagation_task
+            let marked = self
+                .propagation_task
                 .process(&self.search_graph, node, &outcome, agent);
             /*if marked {
                 println!("marked a node as solved with: {:?}, {:?}", outcome, node.expected_outcome
@@ -364,7 +369,8 @@ where
 
     pub fn one_iteration(&self, root: &G::Node, state: &mut P::State)
     where
-        X: ExpansionTrait<P, D, H::K>,P::Outcome: Debug
+        X: ExpansionTrait<P, D, H::K>,
+        P::Outcome: Debug,
     {
         let trajectory = &mut vec![];
         let undo_stack = &mut vec![];
@@ -387,7 +393,8 @@ where
 
     fn one_block(&self, root: &G::Node, state: &mut P::State, size: usize)
     where
-        X: BlockExpansionTrait<P, D, H::K>,P::Outcome: Debug
+        X: BlockExpansionTrait<P, D, H::K>,
+        P::Outcome: Debug,
     {
         let trajectories = &mut vec![];
         let undo_stack = &mut vec![];
@@ -515,7 +522,7 @@ where
                         Some(start_count),
                         &mut v,
                         256,
-                        true
+                        true,
                     );
                 }
             }
@@ -580,15 +587,10 @@ where
                     Some(start_count),
                     &mut v,
                     1024,
-                        true
+                    true,
                 );
             }
-            self.mpv(
-                    root,
-                    &mut pv_state,
-                    Some(start_time),
-                    Some(start_count),
-                );
+            self.mpv(root, &mut pv_state, Some(start_time), Some(start_count));
         })
         .unwrap();
         start_time.elapsed().as_millis()
@@ -619,17 +621,13 @@ where
         }
     }
 
-    fn print_node(
-        &self,
-        node: &G::Node,
-        edge: &G::Edge,
-        agent: P::Agent,
-        action: &P::Action
-    ) where
+    fn print_node(&self, node: &G::Node, edge: &G::Edge, agent: P::Agent, action: &P::Action)
+    where
         P::Action: Display,
         P::Agent: Display,
         P::Outcome: WinnableOutcome<P::Agent> + Display,
-        <P::Outcome as Outcome<P::Agent>>::RewardType: Display,{
+        <P::Outcome as Outcome<P::Agent>>::RewardType: Display,
+    {
         let es = edge.selection_count();
         let rs = node.selection_count();
         let confidence = (if es == u32::MAX {
@@ -662,7 +660,7 @@ where
         start_count: Option<u32>,
         trajectory: &mut Vec<(&'a G::Node, &'a G::Edge)>,
         filter: u32,
-        detail: bool
+        detail: bool,
     ) where
         P::Action: Display,
         P::Agent: Display,
@@ -743,7 +741,7 @@ fn color_from_confidence(s: &str, c: u32) -> ColoredString {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::lib::decision_process::c4::{C4, ZobHash, Move};
+    use crate::lib::decision_process::c4::{Move, ZobHash, C4};
     use crate::lib::decision_process::graph_dp::tests::{problem1, problem2, problem3, DSim};
     use crate::lib::decision_process::graph_dp::GHash;
     use crate::lib::decision_process::hex::{Hex, HexRandomSimulator};
@@ -991,12 +989,7 @@ mod tests {
         let mut s = Search::new(
             C4::new(9, 7),
             SafeGraph::<_, OnlyAction<_>, _>::new(0.0),
-            WeightedRandomPolicyWithExpDepth::new(
-                RandomPolicy,
-                UctPolicy::new(2.4),
-                0.05,
-                -1.5,
-            ),
+            WeightedRandomPolicyWithExpDepth::new(RandomPolicy, UctPolicy::new(2.4), 0.05, -1.5),
             BlockExpansionFromBasic::new(BasicExpansion::new(OneStepGreedySimulator)),
             ZobHash::new(63),
             MiniMaxPropagationTask::new(),

@@ -3,13 +3,10 @@ mod lib;
 use crate::lib::decision_process::hex::HexRandomSimulator;
 use crate::lib::decision_process::hex::{Hex, Move, ZobHash};
 use crate::lib::decision_process::DecisionProcess;
-use crate::lib::mcgs::expansion_traits::{
-    BasicExpansion, BlockExpansionFromBasic,
-};
+use crate::lib::mcgs::expansion_traits::{BasicExpansion, BlockExpansionFromBasic};
 use crate::lib::mcgs::graph::SafeGraph;
 use crate::lib::mcgs::graph_policy::{
-     PvPolicy, RandomPolicy, SelectionPolicy, UctPolicy,
-    WeightedRandomPolicyWithExpDepth,
+    PvPolicy, RandomPolicy, SelectionPolicy, UctPolicy, WeightedRandomPolicyWithExpDepth,
 };
 use crate::lib::mcgs::search_graph::{OutcomeStore, SearchGraph, SelectCountStore};
 use crate::lib::mcgs::GraphBasedPrune;

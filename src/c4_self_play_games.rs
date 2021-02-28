@@ -4,13 +4,13 @@ use crate::lib::mcgs::expansion_traits::BasicExpansion;
 use crate::lib::mcgs::graph::NoHash;
 use crate::lib::mcgs::graph_policy::UctPolicy;
 use crate::lib::mcgs::nnet::c4net::{c4_generate_self_play_game, net1};
-use crate::lib::mcgs::nnet::{SelfPlayData, process};
+use crate::lib::mcgs::nnet::{process, SelfPlayData};
 use crate::lib::mcgs::tree::SafeTree;
 use crate::lib::mcgs::{AlwaysExpand, Search};
 use crate::lib::OnlyAction;
+use tch::nn::OptimizerConfig;
 use tch::{Device, Kind, Tensor};
 use text_io::read;
-use tch::nn::OptimizerConfig;
 
 mod lib;
 
@@ -83,7 +83,7 @@ fn main() {
                 let (log_policy, v) = nn.forward(&input);
                 log_policy.print();
                 v.print();
-            },
+            }
             "update" => {
                 let va: i32 = read!();
                 let path: String = read!();
@@ -94,7 +94,7 @@ fn main() {
                 let d = SelfPlayData {
                     states_tensor: states,
                     policy_tensor: policy,
-                    value_tensor: value
+                    value_tensor: value,
                 };
                 for _ in 0..ic {
                     process(&d, &mut nn, &mut opt, va != 0);

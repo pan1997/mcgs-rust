@@ -2,13 +2,10 @@ mod lib;
 use crate::lib::decision_process::c4::{Move, ZobHash, C4};
 use crate::lib::decision_process::DecisionProcess;
 use crate::lib::decision_process::RandomSimulator;
-use crate::lib::mcgs::expansion_traits::{
-    BasicExpansion, BlockExpansionFromBasic,
-};
+use crate::lib::mcgs::expansion_traits::{BasicExpansion, BlockExpansionFromBasic};
 use crate::lib::mcgs::graph::SafeGraph;
 use crate::lib::mcgs::graph_policy::{
-    PvPolicy, RandomPolicy, SelectionPolicy, UctPolicy,
-    WeightedRandomPolicyWithExpDepth,
+    PvPolicy, RandomPolicy, SelectionPolicy, UctPolicy, WeightedRandomPolicyWithExpDepth,
 };
 use crate::lib::mcgs::search_graph::{OutcomeStore, SearchGraph, SelectCountStore};
 use crate::lib::mcgs::GraphBasedPrune;
@@ -21,14 +18,9 @@ fn main() {
     let mut s = Search::new(
         C4::new(9, 7),
         SafeGraph::new(0.0),
-        WeightedRandomPolicyWithExpDepth::new(
-            RandomPolicy,
-            UctPolicy::new(2.4),
-            0.05,
-            -1.5,
-        ),
+        WeightedRandomPolicyWithExpDepth::new(RandomPolicy, UctPolicy::new(2.4), 0.05, -1.5),
         BlockExpansionFromBasic::new(BasicExpansion::new(RandomSimulator)),
-        ZobHash::new(19 * 19),
+        ZobHash::new(9 * 7),
         MiniMaxPropagationTask::new(),
         GraphBasedPrune {
             delta: 0.05,
