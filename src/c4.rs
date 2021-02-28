@@ -20,52 +20,20 @@ use crate::lib::{ActionWithStaticPolicy, OnlyAction};
 use std::sync::atomic::Ordering;
 use text_io::read;
 
-
 fn main() {
-    println!("Hello World");
-}
-
-
-
-fn main1() {
-    /*
-    let mut s = Search::new(
-        C4::new(9, 7),
-        SafeTree::<OnlyAction<_>, f32>::new(0.0),
-        WeightedRandomPolicyWithExpDepth::new(RandomPolicy, UctPolicy::new(2.4), 0.01, -0.8),
-        BasicExpansion::new(OneStepGreedySimulator),
-        NoHash,
-        0.01,
-        1,
-        default_cpu,
-    );
-    let s = Search::new(
-        C4::new(9, 7),
-        SafeTree::<ActionWithStaticPolicy<_>, f32>::new(),
-        PuctPolicy::new(2.4, 20.0),
-        BasicExpansionWithUniformPrior::new(RandomSimulator),
-        0.01,
-        1,
-    );*/
     let default_cpu = 8;
     let mut s = Search::new(
-        C4::new(19, 19),
+        C4::new(9, 7),
         SafeGraph::new(0.0),
-        //SafeTree::new(0.0),
-        //WeightedRandomPolicyWithExpDepth::new(RandomPolicy, UctPolicy::new(2.4), 0.05, -1.5),
         WeightedRandomPolicyWithExpDepth::new(
             RandomPolicy,
-            //PuctPolicy::new(2500.0, 2.4),
             UctPolicy::new(2.4),
             0.05,
             -1.5,
         ),
         BlockExpansionFromBasic::new(BasicExpansion::new(RandomSimulator)),
-        //BlockExpansionFromBasic::new(BasicExpansionWithUniformPrior::new(OneStepGreedySimulator)),
         ZobHash::new(19 * 19),
-        //NoHash,
         MiniMaxPropagationTask::new(),
-        //AlwaysExpand,
         GraphBasedPrune {
             delta: 0.05,
             clip: 1.0,
@@ -96,7 +64,7 @@ fn main1() {
             "analyse" => {
                 println!("{}", state);
                 let time_limit: u128 = read!();
-                let node = s.get_new_node(&mut state); // search_graph().create_node(&state);
+                let node = s.get_new_node(&mut state);
                 let elapsed =
                     s.start_parallel(&node, &state, None, Some(time_limit), Some(96), false);
                 let agent = s.problem().agent_to_act(&state);
@@ -113,18 +81,6 @@ fn main1() {
                     node.selection_count(),
                     elapsed
                 );
-                //println!("p1: {:?} p2: {:?}", s.tree_policy().c1, s.tree_policy().c2);
-                /*for (index, (a, b)) in s
-                    .tree_policy()
-                    .c1
-                    .iter()
-                    .zip(s.tree_policy().c2.iter())
-                    .enumerate()
-                //{
-                //   let ac = a.load(Ordering::SeqCst);
-                //    let bc = b.load(Ordering::SeqCst);
-                //    //println!("{} {}", index, ac as f32 / (ac + bc) as f32);
-                //}*/
                 s.search_graph().clear(node);
             }
             _ => (),
