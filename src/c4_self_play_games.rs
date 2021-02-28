@@ -103,5 +103,4 @@ fn main() {
             _ => (),
         }
     }
-    let x = generate_games(2);
 }

@@ -2,37 +2,31 @@ mod lib;
 
 use crate::lib::decision_process::hex::HexRandomSimulator;
 use crate::lib::decision_process::hex::{Hex, Move, ZobHash};
-use crate::lib::decision_process::{DecisionProcess, DefaultSimulator};
+use crate::lib::decision_process::DecisionProcess;
 use crate::lib::mcgs::expansion_traits::{
-    BasicExpansion, BasicExpansionWithUniformPrior, BlockExpansionFromBasic,
+    BasicExpansion, BlockExpansionFromBasic,
 };
-use crate::lib::mcgs::graph::{NoHash, SafeGraph};
+use crate::lib::mcgs::graph::SafeGraph;
 use crate::lib::mcgs::graph_policy::{
-    MostVisitedPolicy, PuctPolicy, PvPolicy, RandomPolicy, SelectionPolicy, UctPolicy,
+     PvPolicy, RandomPolicy, SelectionPolicy, UctPolicy,
     WeightedRandomPolicyWithExpDepth,
 };
 use crate::lib::mcgs::search_graph::{OutcomeStore, SearchGraph, SelectCountStore};
-use crate::lib::mcgs::tree::SafeTree;
-use crate::lib::mcgs::AlwaysExpand;
 use crate::lib::mcgs::GraphBasedPrune;
 use crate::lib::mcgs::MiniMaxPropagationTask;
 use crate::lib::mcgs::Search;
-use crate::lib::{ActionWithStaticPolicy, OnlyAction};
-use std::sync::atomic::Ordering;
-use std::time::Instant;
+use crate::lib::OnlyAction;
 use text_io::read;
 
 fn main() {
     let default_cpu = 12;
     let mut s = Search::new(
         Hex::new(11, 11),
-        //SafeTree::<OnlyAction<_>, _>::new(0.0),
         SafeGraph::<_, OnlyAction<_>, _>::new(0.0),
         WeightedRandomPolicyWithExpDepth::new(RandomPolicy, UctPolicy::new(2.4), 0.05, -1.5),
         BlockExpansionFromBasic::new(BasicExpansion::new(HexRandomSimulator)),
         ZobHash::new(11, 11),
         MiniMaxPropagationTask::new(),
-        //AlwaysExpand,
         GraphBasedPrune {
             delta: 0.05,
             clip: 1.0,
@@ -63,17 +57,9 @@ fn main() {
             "analyse" => {
                 println!("{}", state);
                 let time_limit: u128 = read!();
-                let node = s.get_new_node(&mut state); // search_graph().create_node(&state);
-                                                       //let t = Instant::now();
+                let node = s.get_new_node(&mut state);
                 let elapsed =
                     s.start_parallel(&node, &state, None, Some(time_limit), Some(97), false);
-                //for i in 0..2000 {
-                //    s.one_iteration(&node, &mut state);
-                //    if i % 50 == 0 {
-                //        println!("{}", i);
-                //    }
-                //}
-                //let elapsed = t.elapsed().as_millis();
                 let agent = s.problem().agent_to_act(&state);
                 let best_edge = s.search_graph().get_edge(
                     &node,

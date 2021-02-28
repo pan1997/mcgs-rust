@@ -1,23 +1,19 @@
 mod lib;
 use crate::lib::decision_process::c4::{Move, ZobHash, C4};
-use crate::lib::decision_process::{DecisionProcess, DefaultSimulator};
-use crate::lib::decision_process::{OneStepGreedySimulator, RandomSimulator};
+use crate::lib::decision_process::DecisionProcess;
+use crate::lib::decision_process::RandomSimulator;
 use crate::lib::mcgs::expansion_traits::{
-    BasicExpansion, BasicExpansionWithUniformPrior, BlockExpansionFromBasic,
+    BasicExpansion, BlockExpansionFromBasic,
 };
-use crate::lib::mcgs::graph::{NoHash, SafeGraph};
+use crate::lib::mcgs::graph::SafeGraph;
 use crate::lib::mcgs::graph_policy::{
-    MostVisitedPolicy, PuctPolicy, PvPolicy, RandomPolicy, SelectionPolicy, UctPolicy,
+    PvPolicy, RandomPolicy, SelectionPolicy, UctPolicy,
     WeightedRandomPolicyWithExpDepth,
 };
 use crate::lib::mcgs::search_graph::{OutcomeStore, SearchGraph, SelectCountStore};
-use crate::lib::mcgs::tree::SafeTree;
-use crate::lib::mcgs::AlwaysExpand;
 use crate::lib::mcgs::GraphBasedPrune;
 use crate::lib::mcgs::MiniMaxPropagationTask;
 use crate::lib::mcgs::Search;
-use crate::lib::{ActionWithStaticPolicy, OnlyAction};
-use std::sync::atomic::Ordering;
 use text_io::read;
 
 fn main() {
