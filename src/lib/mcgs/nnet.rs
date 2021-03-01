@@ -1,4 +1,5 @@
-pub(crate) mod c4net;
+pub mod c4net;
+use crate::lib::mcgs::expansion_traits::BlockExpansionTrait;
 use tch::nn::{ConvConfig, Module, ModuleT, Path, SequentialT};
 use tch::{Device, Reduction, Tensor};
 
@@ -8,6 +9,8 @@ pub struct GNet<N1: ModuleT, N2: ModuleT, N3: ModuleT> {
     value: N3,
     training: bool,
 }
+
+unsafe impl<N1: ModuleT, N2: ModuleT, N3: ModuleT> Sync for GNet<N1, N2, N3>{}
 
 impl<N1: ModuleT, N2: ModuleT, N3: ModuleT> GNet<N1, N2, N3> {
     fn new(shared: N1, log_policy: N2, value: N3) -> Self {
@@ -25,11 +28,11 @@ impl<N1: ModuleT, N2: ModuleT, N3: ModuleT> GNet<N1, N2, N3> {
 
     pub(crate) fn forward(&self, state_representation: &Tensor) -> (Tensor, Tensor) {
         let shared = self.shared.forward_t(state_representation, self.training);
-        println!("shared shape: {:?}", shared.size());
+        //println!("shared shape: {:?}", shared.size());
         let log_policy = self.log_policy.forward_t(&shared, self.training);
-        println!("log_policy shape: {:?}", log_policy.size());
+        //println!("log_policy shape: {:?}", log_policy.size());
         let value = self.value.forward_t(&shared, self.training);
-        println!("value shape: {:?}", value.size());
+        //println!("value shape: {:?}", value.size());
         (log_policy, value)
     }
 }

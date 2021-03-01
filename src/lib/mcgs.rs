@@ -2,7 +2,7 @@ mod common;
 pub mod expansion_traits;
 pub mod graph;
 pub mod graph_policy;
-pub(crate) mod nnet;
+pub mod nnet;
 mod samples;
 pub mod search_graph;
 pub mod tree;
@@ -484,53 +484,6 @@ where
         false
     }
 
-    pub(crate) fn start_block(
-        &self,
-        root: &G::Node,
-        state: &mut P::State,
-        node_limit: Option<u32>,
-        time_limit: Option<u128>,
-        confidence: Option<u32>, // out of 100
-    ) -> u128
-    where
-        X: BlockExpansionTrait<P, D, H::K> + ExpansionTrait<P, D, H::K>,
-        P::Action: Display,
-        P::Agent: Display,
-        P::Outcome: WinnableOutcome<P::Agent> + Display + Debug,
-        <P::Outcome as Outcome<P::Agent>>::RewardType: Display,
-    {
-        let start_time = Instant::now();
-        let start_count = root.selection_count();
-        let mut next_pv = 1;
-        let mut worker = || {
-            while !self.end_search(start_time, root, node_limit, time_limit, confidence, 32) {
-                if root.selection_count() < 256 {
-                    for _ in 0..256 {
-                        self.one_iteration(root, state);
-                    }
-                } else {
-                    self.one_block(root, state, 32);
-                }
-                let index = start_time.elapsed().as_millis() / 500;
-                if index >= next_pv {
-                    next_pv += 1;
-                    let mut v = vec![];
-                    self.print_pv(
-                        root,
-                        state,
-                        Some(start_time),
-                        Some(start_count),
-                        &mut v,
-                        256,
-                        true,
-                    );
-                }
-            }
-        };
-        worker();
-        start_time.elapsed().as_millis()
-    }
-
     pub fn start_parallel(
         &self,
         root: &G::Node,
@@ -567,11 +520,11 @@ where
                     while !self.end_search(start_time, root, node_limit, time_limit, confidence, 32)
                     {
                         if !block || root.selection_count() < 256 {
-                            for _ in 0..256 {
+                            for _ in 0..64 {
                                 self.one_iteration(root, &mut local_state);
                             }
                         } else {
-                            self.one_block(root, &mut local_state, 64);
+                            self.one_block(root, &mut local_state, 128);
                         }
                     }
                 });

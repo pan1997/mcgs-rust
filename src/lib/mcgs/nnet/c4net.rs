@@ -1,26 +1,28 @@
 use crate::lib::decision_process::c4::C4;
 use crate::lib::decision_process::{DecisionProcess, Outcome};
-use crate::lib::mcgs::expansion_traits::ExpansionTrait;
+use crate::lib::mcgs::expansion_traits::{BlockExpansionTrait, ExpansionTrait};
 use crate::lib::mcgs::graph::Hsh;
 use crate::lib::mcgs::graph_policy::SelectionPolicy;
 use crate::lib::mcgs::nnet::{build_ffn, GNet, SelfPlayData};
 use crate::lib::mcgs::search_graph::{
     ConcurrentAccess, OutcomeStore, SearchGraph, SelectCountStore,
 };
-use crate::lib::mcgs::{ExtraPropagationTask, Search, TrajectoryPruner};
+use crate::lib::mcgs::{ExpansionResult, ExtraPropagationTask, Search, TrajectoryPruner};
+use crate::lib::ActionWithStaticPolicy;
 use rand::distributions::{Distribution, WeightedIndex};
 use rand::thread_rng;
 use std::ops::Deref;
 use tch::nn::{ModuleT, Path};
-use tch::{Kind, Tensor};
+use tch::{Device, IndexOp, Kind, Tensor};
 
-pub(crate) fn net1(vs: &Path) -> GNet<impl ModuleT, impl ModuleT, impl ModuleT> {
+pub fn net1(vs: &Path) -> GNet<impl ModuleT, impl ModuleT, impl ModuleT> {
     let kernel_sizes = [5, 5, 5, 5, 5, 5];
-    let channel_counts = [3, 10, 20, 20, 20, 20, 20];
+    let channel_counts = [3, 5, 10, 10, 10, 10, 10];
     let shared =
         super::build_sequential_cnn(vs, &kernel_sizes, &channel_counts).add_fn(|x| x.flat_view());
-    let value = build_ffn(vs, &[1260, 50, 1]);
-    let log_policy = build_ffn(vs, &[1260, 100, 9]);
+    let _value = build_ffn(vs, &[630, 50, 1]);
+    let value = _value.add_fn(|x| 2 * x.sigmoid() - 1.0);
+    let log_policy = build_ffn(vs, &[630, 100, 9]);
     GNet::new(shared, log_policy, value)
 }
 
@@ -113,14 +115,90 @@ where
     }
 }
 
+impl<N1: ModuleT, N2: ModuleT, N3: ModuleT, K>
+    BlockExpansionTrait<C4, ActionWithStaticPolicy<<C4 as DecisionProcess>::Action>, K>
+    for GNet<N1, N2, N3>
+{
+    type OutputIter =
+        <Vec<ActionWithStaticPolicy<<C4 as DecisionProcess>::Action>> as IntoIterator>::IntoIter;
+    type Batch = (Vec<Tensor>, Vec<(K, <C4 as DecisionProcess>::Actions)>);
+
+    fn accept(
+        &self,
+        problem: &C4,
+        state: &mut <C4 as DecisionProcess>::State,
+        state_key: K,
+        batch: &mut Self::Batch,
+    ) -> usize {
+        batch.0.push(problem.generate_tensor(state));
+        batch.1.push((state_key, problem.legal_actions(state)));
+        batch.0.len() - 1
+    }
+
+    fn process_accepted(
+        &self,
+        batch: Self::Batch,
+    ) -> Vec<ExpansionResult<<C4 as DecisionProcess>::Outcome, Self::OutputIter, K>> {
+        let input = Tensor::cat(&batch.0, 0)
+            .to_device(Device::Cuda(0))
+            .to_kind(Kind::Float);
+        let (log_policy, _value) = self.forward(&input);
+        let value: Vec<f64> = _value.into();
+        let policy: Vec<Vec<f32>> = log_policy.exp().into();
+        let mut result = vec![];
+        for (index, entry) in batch.1.into_iter().enumerate() {
+            let mut edges: Vec<_> = entry
+                .1
+                .map(|m| ActionWithStaticPolicy {
+                    action: m,
+                    static_policy_score: policy[index][m.0 as usize],
+                })
+                .collect();
+            let edges_sum: f32 = edges.iter().map(|e| e.static_policy_score).sum();
+            edges
+                .iter_mut()
+                .for_each(|e| e.static_policy_score /= edges_sum);
+            result.push(ExpansionResult {
+                state_key: entry.0,
+                outcome: value[index],
+                edges: edges.into_iter(),
+            })
+        }
+        result
+    }
+
+    fn new_batch(&self) -> Self::Batch {
+        (vec![], vec![])
+    }
+}
+impl<N1: ModuleT, N2: ModuleT, N3: ModuleT, K>
+    ExpansionTrait<C4, ActionWithStaticPolicy<<C4 as DecisionProcess>::Action>, K>
+    for GNet<N1, N2, N3>
+{
+    type OutputIter =
+        <Vec<ActionWithStaticPolicy<<C4 as DecisionProcess>::Action>> as IntoIterator>::IntoIter;
+
+    fn apply(
+        &self,
+        problem: &C4,
+        state: &mut <C4 as DecisionProcess>::State,
+        state_key: K,
+    ) -> ExpansionResult<<C4 as DecisionProcess>::Outcome, Self::OutputIter, K> {
+        let mut batch = self.new_batch();
+        let _ = self.accept(problem, state, state_key, &mut batch);
+        self.process_accepted(batch).into_iter().next().unwrap()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::lib::decision_process::RandomSimulator;
     use crate::lib::mcgs::expansion_traits::BasicExpansion;
     use crate::lib::mcgs::graph::NoHash;
-    use crate::lib::mcgs::graph_policy::UctPolicy;
+    use crate::lib::mcgs::graph_policy::{PuctPolicy, UctPolicy};
     use crate::lib::mcgs::nnet::process;
+    use crate::lib::mcgs::tree::tests::print_tree;
     use crate::lib::mcgs::tree::SafeTree;
     use crate::lib::mcgs::AlwaysExpand;
     use crate::lib::OnlyAction;
@@ -177,5 +255,32 @@ mod tests {
         let root = &vs.root();
         let nn = net1(root);
         //nn.forward(&c4.generate_tensor(&state).to_kind(Kind::Float));
+    }
+
+    #[test]
+    fn t1fgggth() {
+        let vs = tch::nn::VarStore::new(Device::Cuda(0));
+        let root = &vs.root();
+
+        let s = Search::new(
+            C4::new(9, 7),
+            SafeTree::<_, _>::new(0.0),
+            PuctPolicy::new(20.0, 2.0),
+            net1(root),
+            NoHash,
+            (),
+            AlwaysExpand,
+            1,
+        );
+
+        let c4 = s.problem();
+        let mut state = c4.start_state();
+        let n = s.get_new_node(&mut state);
+
+        print_tree(&s.search_graph, &n, 0, true);
+        for _ in 0..100 {
+            s.one_iteration(&n, &mut state);
+            print_tree(&s.search_graph, &n, 0, false);
+        }
     }
 }

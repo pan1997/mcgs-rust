@@ -5,21 +5,48 @@ use crate::lib::decision_process::RandomSimulator;
 use crate::lib::mcgs::expansion_traits::{BasicExpansion, BlockExpansionFromBasic};
 use crate::lib::mcgs::graph::SafeGraph;
 use crate::lib::mcgs::graph_policy::{
-    PvPolicy, RandomPolicy, SelectionPolicy, UctPolicy, WeightedRandomPolicyWithExpDepth,
+    PuctPolicy, PvPolicy, RandomPolicy, SelectionPolicy, WeightedRandomPolicyWithExpDepth,
 };
 use crate::lib::mcgs::search_graph::{OutcomeStore, SearchGraph, SelectCountStore};
 use crate::lib::mcgs::GraphBasedPrune;
 use crate::lib::mcgs::MiniMaxPropagationTask;
 use crate::lib::mcgs::Search;
 use text_io::read;
+use tch::Device;
+use crate::lib::mcgs::nnet::c4net::net1;
+
 
 fn main() {
+    /*
     let default_cpu = 8;
     let mut s = Search::new(
         C4::new(9, 7),
         SafeGraph::new(0.0),
         WeightedRandomPolicyWithExpDepth::new(RandomPolicy, UctPolicy::new(2.4), 0.05, -1.5),
         BlockExpansionFromBasic::new(BasicExpansion::new(RandomSimulator)),
+        ZobHash::new(9 * 7),
+        MiniMaxPropagationTask::new(),
+        GraphBasedPrune {
+            delta: 0.05,
+            clip: 1.0,
+            margin: 4,
+        },
+        default_cpu,
+    );*/
+
+    let default_cpu = 1;
+    let vs = tch::nn::VarStore::new(Device::Cuda(0));
+    let root = &vs.root();
+    let mut s = Search::new(
+        C4::new(9, 7),
+        SafeGraph::new(0.0),
+        WeightedRandomPolicyWithExpDepth::new(
+            RandomPolicy,
+            PuctPolicy::new(200.0, 2.4),
+            0.05,
+            -1.5,
+        ),
+        net1(root),
         ZobHash::new(9 * 7),
         MiniMaxPropagationTask::new(),
         GraphBasedPrune {
@@ -54,7 +81,7 @@ fn main() {
                 let time_limit: u128 = read!();
                 let node = s.get_new_node(&mut state);
                 let elapsed =
-                    s.start_parallel(&node, &state, None, Some(time_limit), Some(96), false);
+                    s.start_parallel(&node, &state, None, Some(time_limit), Some(96), true);
                 let agent = s.problem().agent_to_act(&state);
                 let best_edge = s.search_graph().get_edge(
                     &node,
