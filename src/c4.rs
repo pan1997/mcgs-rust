@@ -34,14 +34,14 @@ fn main() {
     );*/
 
     let default_cpu = 1;
-    let vs = tch::nn::VarStore::new(Device::Cuda(0));
+    let mut vs = tch::nn::VarStore::new(Device::Cuda(0));
     let root = &vs.root();
     let mut s = Search::new(
         C4::new(9, 7),
         SafeGraph::new(0.0),
         WeightedRandomPolicyWithExpDepth::new(
             RandomPolicy,
-            PuctPolicy::new(200.0, 2.4),
+            PuctPolicy::new(1280.0, 2.4),
             0.05,
             -1.5,
         ),
@@ -55,6 +55,8 @@ fn main() {
         },
         default_cpu,
     );
+    let path = "net2";
+    vs.load(path).unwrap();
 
     let mut state = s.problem().start_state();
 
@@ -77,7 +79,8 @@ fn main() {
             "board" => println!("{}", state),
             "analyse" => {
                 println!("{}", state);
-                let time_limit: u128 = read!();
+                let _time_limit: u128 = read!();
+                let time_limit = 30000;
                 let node = s.get_new_node(&mut state);
                 let elapsed =
                     s.start_parallel(&node, &state, None, Some(time_limit), Some(96), true);

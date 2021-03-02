@@ -12,6 +12,11 @@ pub trait ExpansionTrait<P: DecisionProcess, I, K> {
     ) -> ExpansionResult<P::Outcome, Self::OutputIter, K>;
 }
 
+pub enum BlockExpansionResult<O, OO, K> {
+    Future(usize),
+    Immidiate(ExpansionResult<O, OO, K>),
+}
+
 pub trait BlockExpansionTrait<P: DecisionProcess, I, K> {
     type OutputIter: Iterator<Item = I>;
     type Batch;
@@ -21,7 +26,7 @@ pub trait BlockExpansionTrait<P: DecisionProcess, I, K> {
         state: &mut P::State,
         state_key: K,
         batch: &mut Self::Batch,
-    ) -> usize;
+    ) -> BlockExpansionResult<P::Outcome, Self::OutputIter, K>;
 
     fn process_accepted(
         &self,
@@ -143,9 +148,9 @@ where
         state: &mut <P as DecisionProcess>::State,
         state_key: K,
         batch: &mut Self::Batch,
-    ) -> usize {
+    ) -> BlockExpansionResult<P::Outcome, Self::OutputIter, K> {
         batch.push(self.basic.apply(problem, state, state_key));
-        batch.len() - 1
+        BlockExpansionResult::Future(batch.len() - 1)
     }
 
     fn process_accepted(

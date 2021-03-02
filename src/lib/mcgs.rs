@@ -13,7 +13,9 @@ use search_graph::*;
 use crate::lib::decision_process::{
     ComparableOutcome, DecisionProcess, Distance, Outcome, SimpleMovingAverage, WinnableOutcome,
 };
-use crate::lib::mcgs::expansion_traits::{BlockExpansionTrait, ExpansionTrait};
+use crate::lib::mcgs::expansion_traits::{
+    BlockExpansionResult, BlockExpansionTrait, ExpansionTrait,
+};
 use crate::lib::mcgs::graph::Hsh;
 use crate::lib::mcgs::SelectionResult::Expand;
 use colored::{ColoredString, Colorize};
@@ -405,15 +407,33 @@ where
                     self.propagate(&mut trajectory, node, outcome, weight);
                     short_count += 1;
                 }
-                SelectionResult::Expand => trajectories.push((
-                    trajectory,
-                    self.expand_operation.accept(
+                SelectionResult::Expand => {
+                    match self.expand_operation.accept(
                         &self.problem,
                         state,
                         self.state_hasher.key(state),
                         &mut batch,
-                    ),
-                )),
+                    ) {
+                        BlockExpansionResult::Future(index) => {
+                            trajectories.push((trajectory, index))
+                        }
+                        BlockExpansionResult::Immidiate(result) => {
+                            let node = self
+                                .search_graph
+                                .create_node(result.state_key, result.edges);
+                            node.lock();
+                            if self.search_graph.is_leaf(&node) {
+                                node.mark_solved(&result.outcome);
+                            } else {
+                                node.add_sample(&result.outcome, 1);
+                            }
+                            node.increment_selection_count();
+                            node.unlock();
+                            self.propagate(&mut trajectory, &node, result.outcome, 1);
+                            short_count += 1;
+                        }
+                    }
+                }
             }
             while let Some(u) = undo_stack.pop() {
                 self.problem.undo_transition(state, u);

@@ -1,5 +1,6 @@
 use crate::lib::decision_process::c4::C4;
 use crate::lib::decision_process::{DecisionProcess, Outcome};
+use crate::lib::mcgs::expansion_traits::BlockExpansionResult;
 use crate::lib::mcgs::expansion_traits::{BlockExpansionTrait, ExpansionTrait};
 use crate::lib::mcgs::graph::Hsh;
 use crate::lib::mcgs::graph_policy::SelectionPolicy;
@@ -11,6 +12,7 @@ use crate::lib::mcgs::{ExpansionResult, ExtraPropagationTask, Search, Trajectory
 use crate::lib::ActionWithStaticPolicy;
 use rand::distributions::{Distribution, WeightedIndex};
 use rand::thread_rng;
+use std::collections::BTreeMap;
 use std::ops::Deref;
 use tch::nn::{ModuleT, Path};
 use tch::{Device, IndexOp, Kind, Tensor};
@@ -115,13 +117,17 @@ where
     }
 }
 
-impl<N1: ModuleT, N2: ModuleT, N3: ModuleT, K>
+impl<N1: ModuleT, N2: ModuleT, N3: ModuleT, K: Ord + Copy>
     BlockExpansionTrait<C4, ActionWithStaticPolicy<<C4 as DecisionProcess>::Action>, K>
     for GNet<N1, N2, N3>
 {
     type OutputIter =
         <Vec<ActionWithStaticPolicy<<C4 as DecisionProcess>::Action>> as IntoIterator>::IntoIter;
-    type Batch = (Vec<Tensor>, Vec<(K, <C4 as DecisionProcess>::Actions)>);
+    type Batch = (
+        Vec<Tensor>,
+        Vec<(K, <C4 as DecisionProcess>::Actions)>,
+        BTreeMap<K, usize>,
+    );
 
     fn accept(
         &self,
@@ -129,49 +135,69 @@ impl<N1: ModuleT, N2: ModuleT, N3: ModuleT, K>
         state: &mut <C4 as DecisionProcess>::State,
         state_key: K,
         batch: &mut Self::Batch,
-    ) -> usize {
-        batch.0.push(problem.generate_tensor(state));
-        batch.1.push((state_key, problem.legal_actions(state)));
-        batch.0.len() - 1
+    ) -> BlockExpansionResult<<C4 as DecisionProcess>::Outcome, Self::OutputIter, K> {
+        let old = batch.2.get(&state_key);
+        if old.is_some() {
+            BlockExpansionResult::Future(*old.unwrap())
+        } else {
+            let outcome_opt = problem.is_finished(state);
+            if outcome_opt.is_none() {
+                batch.0.push(problem.generate_tensor(state));
+                batch.1.push((state_key, problem.legal_actions(state)));
+                let index = batch.0.len() - 1;
+                batch.2.insert(state_key, index);
+                BlockExpansionResult::Future(index)
+            } else {
+                BlockExpansionResult::Immidiate(ExpansionResult {
+                    state_key,
+                    outcome: outcome_opt.unwrap(),
+                    edges: vec![].into_iter(),
+                })
+            }
+        }
     }
 
     fn process_accepted(
         &self,
         batch: Self::Batch,
     ) -> Vec<ExpansionResult<<C4 as DecisionProcess>::Outcome, Self::OutputIter, K>> {
-        let input = Tensor::cat(&batch.0, 0)
-            .to_device(Device::Cuda(0))
-            .to_kind(Kind::Float);
-        let (log_policy, _value) = self.forward(&input);
-        let value: Vec<f64> = _value.into();
-        let policy: Vec<Vec<f32>> = log_policy.exp().into();
-        let mut result = vec![];
-        for (index, entry) in batch.1.into_iter().enumerate() {
-            let mut edges: Vec<_> = entry
-                .1
-                .map(|m| ActionWithStaticPolicy {
-                    action: m,
-                    static_policy_score: policy[index][m.0 as usize],
+        if batch.0.len() > 0 {
+            let input = Tensor::cat(&batch.0, 0)
+                .to_device(Device::Cuda(0))
+                .to_kind(Kind::Float);
+            let (log_policy, _value) = self.forward(&input);
+            let value: Vec<f64> = _value.into();
+            let policy: Vec<Vec<f32>> = log_policy.exp().into();
+            let mut result = vec![];
+            for (index, entry) in batch.1.into_iter().enumerate() {
+                let mut edges: Vec<_> = entry
+                    .1
+                    .map(|m| ActionWithStaticPolicy {
+                        action: m,
+                        static_policy_score: policy[index][m.0 as usize],
+                    })
+                    .collect();
+                let edges_sum: f32 = edges.iter().map(|e| e.static_policy_score).sum();
+                edges
+                    .iter_mut()
+                    .for_each(|e| e.static_policy_score /= edges_sum);
+                result.push(ExpansionResult {
+                    state_key: entry.0,
+                    outcome: value[index],
+                    edges: edges.into_iter(),
                 })
-                .collect();
-            let edges_sum: f32 = edges.iter().map(|e| e.static_policy_score).sum();
-            edges
-                .iter_mut()
-                .for_each(|e| e.static_policy_score /= edges_sum);
-            result.push(ExpansionResult {
-                state_key: entry.0,
-                outcome: value[index],
-                edges: edges.into_iter(),
-            })
+            }
+            result
+        } else {
+            vec![]
         }
-        result
     }
 
     fn new_batch(&self) -> Self::Batch {
-        (vec![], vec![])
+        (vec![], vec![], Default::default())
     }
 }
-impl<N1: ModuleT, N2: ModuleT, N3: ModuleT, K>
+impl<N1: ModuleT, N2: ModuleT, N3: ModuleT, K: Ord + Copy>
     ExpansionTrait<C4, ActionWithStaticPolicy<<C4 as DecisionProcess>::Action>, K>
     for GNet<N1, N2, N3>
 {
@@ -185,8 +211,12 @@ impl<N1: ModuleT, N2: ModuleT, N3: ModuleT, K>
         state_key: K,
     ) -> ExpansionResult<<C4 as DecisionProcess>::Outcome, Self::OutputIter, K> {
         let mut batch = self.new_batch();
-        let _ = self.accept(problem, state, state_key, &mut batch);
-        self.process_accepted(batch).into_iter().next().unwrap()
+        match self.accept(problem, state, state_key, &mut batch) {
+            BlockExpansionResult::Future(_) => {
+                self.process_accepted(batch).into_iter().next().unwrap()
+            }
+            BlockExpansionResult::Immidiate(result) => result,
+        }
     }
 }
 
