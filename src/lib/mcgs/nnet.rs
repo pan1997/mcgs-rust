@@ -10,7 +10,7 @@ pub struct GNet<N1: ModuleT, N2: ModuleT, N3: ModuleT> {
     training: bool,
 }
 
-unsafe impl<N1: ModuleT, N2: ModuleT, N3: ModuleT> Sync for GNet<N1, N2, N3>{}
+unsafe impl<N1: ModuleT, N2: ModuleT, N3: ModuleT> Sync for GNet<N1, N2, N3> {}
 
 impl<N1: ModuleT, N2: ModuleT, N3: ModuleT> GNet<N1, N2, N3> {
     fn new(shared: N1, log_policy: N2, value: N3) -> Self {

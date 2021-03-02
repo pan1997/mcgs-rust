@@ -140,6 +140,10 @@ impl<O: Clone, D> SearchGraph<D, ()> for SafeTree<D, O> {
         }
     }
 
+    fn link_child(&self, node: &Self::NodeRef, e: &Self::Edge) {
+        unimplemented!()
+    }
+
     fn clear(&self, _: Self::NodeRef) {
         // no extra op needed
     }

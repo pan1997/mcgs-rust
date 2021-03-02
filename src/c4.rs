@@ -7,14 +7,13 @@ use crate::lib::mcgs::graph::SafeGraph;
 use crate::lib::mcgs::graph_policy::{
     PuctPolicy, PvPolicy, RandomPolicy, SelectionPolicy, WeightedRandomPolicyWithExpDepth,
 };
+use crate::lib::mcgs::nnet::c4net::net1;
 use crate::lib::mcgs::search_graph::{OutcomeStore, SearchGraph, SelectCountStore};
 use crate::lib::mcgs::GraphBasedPrune;
 use crate::lib::mcgs::MiniMaxPropagationTask;
 use crate::lib::mcgs::Search;
-use text_io::read;
 use tch::Device;
-use crate::lib::mcgs::nnet::c4net::net1;
-
+use text_io::read;
 
 fn main() {
     /*

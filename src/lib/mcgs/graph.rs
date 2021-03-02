@@ -153,6 +153,15 @@ impl<H: Eq + Hash, O: Clone, D> SearchGraph<D, H> for SafeGraph<H, D, O> {
         }
     }
 
+    fn link_child(&self, n: &Self::NodeRef, e: &Self::Edge) {
+        unsafe {
+            let eo = &mut *e.node.get();
+            if eo.is_none() {
+                eo.replace(n.clone());
+            }
+        }
+    }
+
     fn clear(&self, _: Self::NodeRef) {
         self.nodes.clear()
     }
@@ -219,7 +228,7 @@ pub(crate) mod tests {
         ns: &SafeGraph<H, D, O>,
         n: &Node<O, D>,
         offset: u32,
-        full: bool,
+        full: i32,
     ) {
         println!("node: {{internal: {:?}}}", unsafe { &*n.internal.get() });
         if n.selection_count() > 0 {
@@ -232,10 +241,10 @@ pub(crate) mod tests {
                 print!("-> {{data: {}, internal: {:?}}} ", edge.data, unsafe {
                     &*edge.internal.get()
                 });
-                if !full || ns.is_dangling(edge) {
+                if full <= 0 || ns.is_dangling(edge) {
                     println!("-> !");
                 } else {
-                    print_graph(ns, ns.get_target_node(edge), offset + 1, full);
+                    print_graph(ns, ns.get_target_node(edge), offset + 1, full - 1);
                 }
             }
         }

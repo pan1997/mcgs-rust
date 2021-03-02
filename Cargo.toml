@@ -33,3 +33,6 @@ path = "src/c4_self_play_games.rs"
 [[bin]]
 name = "hex"
 path = "src/hex.rs"
+
+[profile.release]
+lto = "fat"

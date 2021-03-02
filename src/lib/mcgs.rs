@@ -330,9 +330,7 @@ where
         node: &G::Node, // This is needed later for alpha beta
         mut outcome: P::Outcome,
         mut weight: u32,
-    ) where
-        P::Outcome: Debug,
-    {
+    ) {
         let mut last_node = node;
         while let Some((node, edge, agent)) = trajectory.pop() {
             node.lock();
@@ -370,7 +368,6 @@ where
     pub fn one_iteration(&self, root: &G::Node, state: &mut P::State)
     where
         X: ExpansionTrait<P, D, H::K>,
-        P::Outcome: Debug,
     {
         let trajectory = &mut vec![];
         let undo_stack = &mut vec![];
@@ -394,7 +391,7 @@ where
     fn one_block(&self, root: &G::Node, state: &mut P::State, size: usize)
     where
         X: BlockExpansionTrait<P, D, H::K>,
-        P::Outcome: Debug,
+        P::Outcome: Clone,
     {
         let trajectories = &mut vec![];
         let undo_stack = &mut vec![];
@@ -424,20 +421,25 @@ where
         }
         let expansion_results = self.expand_operation.process_accepted(batch);
 
-        let mut inverse_map = vec![0; expansion_results.len()];
+        let mut inverse_map = vec![vec![]; expansion_results.len()];
         // TODO: fix collisions
         for (i, (_, index)) in trajectories.iter().enumerate() {
-            inverse_map[*index] = i;
+            inverse_map[*index].push(i);
         }
 
-        for (expansion_result, trajectory_index) in expansion_results.into_iter().zip(inverse_map) {
-            let (trajectory, _) = &mut trajectories[trajectory_index];
+        for (expansion_result, trajectory_indexes) in expansion_results.into_iter().zip(inverse_map)
+        {
+            let outcome = expansion_result.outcome;
+            let key = expansion_result.state_key;
+            let edges = expansion_result.edges;
+            let node = self.search_graph.create_node(key, edges);
 
-            let (_, e, _) = trajectory.last().unwrap();
-            let node =
-                self.search_graph
-                    .add_child(expansion_result.state_key, e, expansion_result.edges);
-            self.propagate(trajectory, node, expansion_result.outcome, 1);
+            for trajectory_index in trajectory_indexes {
+                let (trajectory, _) = &mut trajectories[trajectory_index];
+                let (_, e, _) = trajectory.last().unwrap();
+                self.search_graph.link_child(&node, e);
+                self.propagate(trajectory, &node, outcome.clone(), 1);
+            }
         }
     }
 
@@ -498,7 +500,7 @@ where
         X: ExpansionTrait<P, D, H::K> + BlockExpansionTrait<P, D, H::K>,
         P::Action: Display,
         P::Agent: Display,
-        P::Outcome: WinnableOutcome<P::Agent> + Display + Debug,
+        P::Outcome: WinnableOutcome<P::Agent> + Display + Clone,
         <P::Outcome as Outcome<P::Agent>>::RewardType: Display,
         <<P::Outcome as Outcome<P::Agent>>::RewardType as Distance>::NormType: Sync,
         G::Node: Sync,
@@ -519,12 +521,12 @@ where
                 scope.spawn(move |_| {
                     while !self.end_search(start_time, root, node_limit, time_limit, confidence, 32)
                     {
-                        if !block || root.selection_count() < 256 {
+                        if !block || root.selection_count() < 128 {
                             for _ in 0..64 {
                                 self.one_iteration(root, &mut local_state);
                             }
                         } else {
-                            self.one_block(root, &mut local_state, 128);
+                            self.one_block(root, &mut local_state, 64);
                         }
                     }
                 });
@@ -745,10 +747,10 @@ mod tests {
 
         let state = &mut s.problem.start_state();
         let n = s.get_new_node(state);
-        print_tree(&s.search_graph, &n, 0, true);
+        print_tree(&s.search_graph, &n, 0, false);
         for _ in 0..100 {
             s.one_iteration(&n, state);
-            print_tree(&s.search_graph, &n, 0, true);
+            print_tree(&s.search_graph, &n, 0, false);
         }
     }
 
@@ -756,7 +758,7 @@ mod tests {
     fn uct_block() {
         let s = Search::new(
             problem1(),
-            SafeTree::<OnlyAction<_>, _>::new(vec![0.0, 0.0]),
+            SafeGraph::new(vec![0.0, 0.0]),
             UctPolicy::new(2.4),
             BlockExpansionFromBasic::new(BasicExpansion::new(DSim)),
             NoHash,
@@ -767,10 +769,10 @@ mod tests {
 
         let state = &mut s.problem.start_state();
         let n = s.get_new_node(state);
-        print_tree(&s.search_graph, &n, 0, true);
-        for _ in 0..20 {
+        print_graph(&s.search_graph, &n, 0, 0);
+        for _ in 0..1 {
             s.one_block(&n, state, 5);
-            print_tree(&s.search_graph, &n, 0, true);
+            print_graph(&s.search_graph, &n, 0, 2);
         }
     }
 
@@ -883,11 +885,11 @@ mod tests {
 
         let state = &mut s.problem.start_state();
         let n = s.get_new_node(state);
-        print_graph(&s.search_graph, &n, 0, true);
+        print_graph(&s.search_graph, &n, 0, 50);
         for _ in 0..400 {
             s.one_iteration(&n, state);
         }
-        print_graph(&s.search_graph, &n, 0, true);
+        print_graph(&s.search_graph, &n, 0, 20);
         println!()
     }
     #[test]

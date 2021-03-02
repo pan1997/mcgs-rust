@@ -34,6 +34,7 @@ pub trait SearchGraph<D, H> {
     fn create_node<L: Iterator<Item = D>>(&self, h: H, l: L) -> Self::NodeRef;
     fn add_child<'a, L: Iterator<Item = D>>(&self, h: H, e: &'a Self::Edge, l: L)
         -> &'a Self::Node;
+    fn link_child(&self, node: &Self::NodeRef, e: &Self::Edge);
     fn clear(&self, n: Self::NodeRef);
 
     fn is_leaf(&self, n: &Self::Node) -> bool;
